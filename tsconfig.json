@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@robotforge/types": ["./packages/types/src"],
+      "@robotforge/ui": ["./packages/ui/src"],
+      "@robotforge/utils": ["./packages/utils/src"],
+      "@robotforge/api-client": ["./packages/api-client/src"],
+      "@robotforge/robot-sdk": ["./packages/robot-sdk/src"]
+    }
+  },
+  "exclude": ["node_modules", "dist"]
+}

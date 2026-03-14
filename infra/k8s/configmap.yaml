@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: robotforge-config
+  namespace: robotforge
+  labels:
+    app.kubernetes.io/part-of: robotforge
+    app.kubernetes.io/managed-by: kubectl
+data:
+  DATABASE_URL: "postgresql://robotforge:robotforge@postgres.robotforge.svc.cluster.local:5432/robotforge"
+  REDIS_URL: "redis://redis.robotforge.svc.cluster.local:6379"
+  MINIO_ENDPOINT: "minio.robotforge.svc.cluster.local:9000"
+  RABBITMQ_URL: "amqp://rabbitmq.robotforge.svc.cluster.local:5672"
+  LIVEKIT_URL: "ws://livekit.robotforge.svc.cluster.local:7880"
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+  AUTH_SERVICE_URL: "http://auth-service.robotforge.svc.cluster.local:3001"
+  MARKETPLACE_SERVICE_URL: "http://marketplace-service.robotforge.svc.cluster.local:3002"
+  COLLECTION_SERVICE_URL: "http://collection-service.robotforge.svc.cluster.local:8001"
+  PROCESSING_SERVICE_URL: "http://processing-service.robotforge.svc.cluster.local:8002"

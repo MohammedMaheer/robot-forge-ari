@@ -1,0 +1,142 @@
+# ROBOTFORGE Helm Chart Values
+
+global:
+  environment: staging
+  domain: api.robotforge.io
+  imageRegistry: ghcr.io/robotforge
+
+# Auth Service
+authService:
+  replicas: 2
+  image:
+    repository: ghcr.io/robotforge/auth-service
+    tag: latest
+  port: 3001
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# Marketplace Service
+marketplaceService:
+  replicas: 2
+  image:
+    repository: ghcr.io/robotforge/marketplace-service
+    tag: latest
+  port: 3002
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# Collection Service
+collectionService:
+  replicas: 3
+  image:
+    repository: ghcr.io/robotforge/collection-service
+    tag: latest
+  port: 8001
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Processing Service
+processingService:
+  replicas: 2
+  image:
+    repository: ghcr.io/robotforge/processing-service
+    tag: latest
+  port: 8002
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+# Gateway
+gateway:
+  replicas: 2
+  image:
+    repository: ghcr.io/robotforge/gateway
+    tag: latest
+  port: 3000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# Notification Service
+notificationService:
+  replicas: 2
+  image:
+    repository: ghcr.io/robotforge/notification-service
+    tag: latest
+  port: 3003
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# Streaming Service
+streamingService:
+  replicas: 2
+  image:
+    repository: ghcr.io/robotforge/streaming-service
+    tag: latest
+  port: 3004
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# Database
+postgresql:
+  enabled: true
+  auth:
+    database: robotforge
+    username: robotforge
+  primary:
+    persistence:
+      size: 50Gi
+
+# Redis
+redis:
+  enabled: true
+  architecture: standalone
+
+# Ingress
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: api.robotforge.io
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: robotforge-tls
+      hosts:
+        - api.robotforge.io

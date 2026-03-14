@@ -1,0 +1,11 @@
+{
+  "name": "@robotforge/packaging-service",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "uvicorn main:app --reload --host 0.0.0.0 --port 8003",
+    "build": "echo 'Python service — no JS build'",
+    "lint": "ruff check .",
+    "typecheck": "pyright ."
+  }
+}

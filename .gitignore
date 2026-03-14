@@ -1,0 +1,60 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+!.env.example
+*.log
+logs/
+.turbo/
+.next/
+.vite/
+.cache/
+coverage/
+*.sqlite
+*.sqlite3
+*.db
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+out/
+release/
+*.tsbuildinfo
+.nyc_output/
+htmlcov/
+.coverage
+# Electron desktop builds
+apps/desktop/release/
+*.dmg
+*.exe
+*.AppImage
+*.deb
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+# Terraform state
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup
+infra/terraform/.terraform.lock.hcl
+# Playwright
+playwright-report/
+test-results/
+# HDF5 / robot data
+*.hdf5
+*.h5
+*.bag
+# Python virtual envs
+env/
+# pnpm
+.pnpm-store/

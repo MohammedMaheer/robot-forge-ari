@@ -1,0 +1,11 @@
+{
+  "name": "@robotforge/collection-service",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "uvicorn main:app --reload --host 0.0.0.0 --port 8001",
+    "build": "echo 'Python service — no JS build'",
+    "lint": "ruff check .",
+    "typecheck": "pyright ."
+  }
+}

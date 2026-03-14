@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collection-service
+  namespace: robotforge
+  labels:
+    app: collection-service
+    app.kubernetes.io/name: collection-service
+    app.kubernetes.io/part-of: robotforge
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: collection-service
+  template:
+    metadata:
+      labels:
+        app: collection-service
+        app.kubernetes.io/name: collection-service
+    spec:
+      containers:
+        - name: collection-service
+          image: ghcr.io/robotforge/collection-service:latest
+          ports:
+            - containerPort: 8001
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: robotforge-config
+            - secretRef:
+                name: robotforge-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: collection-service
+  namespace: robotforge
+  labels:
+    app: collection-service
+    app.kubernetes.io/name: collection-service
+    app.kubernetes.io/part-of: robotforge
+spec:
+  type: ClusterIP
+  selector:
+    app: collection-service
+  ports:
+    - port: 8001
+      targetPort: 8001
+      protocol: TCP
+      name: http

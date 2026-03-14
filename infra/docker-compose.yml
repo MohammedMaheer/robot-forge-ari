@@ -1,0 +1,168 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL with TimescaleDB ──────────────────────────
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: robotforge-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-robotforge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-robotforge_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-robotforge}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U robotforge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: robotforge-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO (S3-compatible object storage) ─────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: robotforge-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-robotforge}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-robotforge_dev_secret}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── RabbitMQ ─────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: robotforge-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-robotforge}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-robotforge_dev}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Elasticsearch ────────────────────────────────────────
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: robotforge-elasticsearch
+    restart: unless-stopped
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ── Kibana ───────────────────────────────────────────────
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: robotforge-kibana
+    restart: unless-stopped
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # ── Logstash (ELK pipeline) ──────────────────────────────
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: robotforge-logstash
+    restart: unless-stopped
+    ports:
+      - "5044:5044"
+      - "5000:5000/tcp"
+      - "5000:5000/udp"
+      - "9600:9600"
+    environment:
+      - "LS_JAVA_OPTS=-Xms256m -Xmx256m"
+      - xpack.monitoring.enabled=false
+    volumes:
+      - logstash_pipeline:/usr/share/logstash/pipeline
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # ── ClickHouse (analytics / telemetry store) ─────────────
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: robotforge-clickhouse
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      - CLICKHOUSE_DB=robotforge_analytics
+      - CLICKHOUSE_USER=robotforge
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-robotforge_dev}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── LiveKit Server ───────────────────────────────────────
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: robotforge-livekit
+    restart: unless-stopped
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    environment:
+      - LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}:${LIVEKIT_API_SECRET:-devsecret1234567890abcdef}
+    command: --dev --bind 0.0.0.0
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  rabbitmq_data:
+  elasticsearch_data:
+  logstash_pipeline:
+  clickhouse_data:
