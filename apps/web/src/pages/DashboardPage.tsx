@@ -5,20 +5,6 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { useAuthStore } from '@/store/authStore';
 import { apiClient } from '@/lib/api';
 
-// ── Fallback data (used when API is unavailable) ──────────
-const FALLBACK_ACTIVITY = [
-  { id: '1', type: 'episode_complete', message: 'Episode #1042 processed — quality 92', time: '2 min ago' },
-  { id: '2', type: 'dataset_published', message: 'Dataset "UR5 Bin Picking v3" published', time: '15 min ago' },
-  { id: '3', type: 'robot_connected', message: 'Franka Panda connected at 192.168.1.42', time: '32 min ago' },
-  { id: '4', type: 'episode_complete', message: 'Episode #1041 processed — quality 87', time: '1 hr ago' },
-  { id: '5', type: 'purchase', message: 'New purchase: Assembly Dataset Pro', time: '2 hr ago' },
-];
-
-const FALLBACK_EFFICIENCY = Array.from({ length: 7 }, (_, i) => ({
-  day: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i],
-  episodes: Math.floor(Math.random() * 40) + 10,
-}));
-
 interface DashboardKpis {
   totalEpisodes: number;
   storageUsedGb: number;
@@ -52,37 +38,22 @@ export function DashboardPage() {
   const { user } = useAuthStore();
 
   // ── Fetch KPIs from API ───────────────────────────────
-  const { data: kpis } = useQuery<DashboardKpis>({
+  const { data: kpis, isLoading: kpisLoading, isError: kpisError } = useQuery<DashboardKpis>({
     queryKey: ['dashboard', 'kpis'],
     queryFn: async () => {
-      try {
-        const { data } = await apiClient.get('/collection/dashboard/kpis');
-        return data.data;
-      } catch {
-        return {
-          totalEpisodes: 2847,
-          storageUsedGb: 142,
-          storageQuotaGb: 500,
-          activeRobots: 3,
-          avgQuality: 87.4,
-          weeklyGrowth: '+12%',
-        };
-      }
+      const { data } = await apiClient.get('/collection/dashboard/kpis');
+      return data.data;
     },
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
 
   // ── Fetch recent activity ─────────────────────────────
-  const { data: activity } = useQuery<ActivityItem[]>({
+  const { data: activity, isLoading: activityLoading, isError: activityError } = useQuery<ActivityItem[]>({
     queryKey: ['dashboard', 'activity'],
     queryFn: async () => {
-      try {
-        const { data } = await apiClient.get('/collection/dashboard/activity');
-        return data.data;
-      } catch {
-        return FALLBACK_ACTIVITY;
-      }
+      const { data } = await apiClient.get('/collection/dashboard/activity');
+      return data.data;
     },
     staleTime: 15_000,
     refetchInterval: 30_000,
@@ -92,12 +63,8 @@ export function DashboardPage() {
   const { data: efficiency } = useQuery({
     queryKey: ['dashboard', 'efficiency'],
     queryFn: async () => {
-      try {
-        const { data } = await apiClient.get('/collection/dashboard/efficiency');
-        return data.data;
-      } catch {
-        return FALLBACK_EFFICIENCY;
-      }
+      const { data } = await apiClient.get('/collection/dashboard/efficiency');
+      return data.data;
     },
     staleTime: 60_000,
   });
@@ -113,20 +80,28 @@ export function DashboardPage() {
       </div>
 
       {/* KPI Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard
-          title="Total Episodes Collected"
-          value={(kpis?.totalEpisodes ?? 0).toLocaleString()}
-          trend={`${kpis?.weeklyGrowth ?? '+0%'} vs last week`}
-        />
-        <KpiCard
-          title="Storage Used"
-          value={`${kpis?.storageUsedGb ?? 0} GB`}
-          sub={`of ${kpis?.storageQuotaGb ?? 500} GB quota`}
-        />
-        <KpiCard title="Active Robots" value={String(kpis?.activeRobots ?? 0)} sub="connected now" />
-        <KpiCard title="Avg Quality Score" value={String(kpis?.avgQuality ?? 0)} sub="out of 100" />
-      </div>
+      {kpisLoading ? (
+        <div className="flex items-center justify-center h-40">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+        </div>
+      ) : kpisError ? (
+        <div className="text-center py-10 text-red-400">Failed to load data</div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <KpiCard
+            title="Total Episodes Collected"
+            value={(kpis?.totalEpisodes ?? 0).toLocaleString()}
+            trend={`${kpis?.weeklyGrowth ?? '+0%'} vs last week`}
+          />
+          <KpiCard
+            title="Storage Used"
+            value={`${kpis?.storageUsedGb ?? 0} GB`}
+            sub={`of ${kpis?.storageQuotaGb ?? 500} GB quota`}
+          />
+          <KpiCard title="Active Robots" value={String(kpis?.activeRobots ?? 0)} sub="connected now" />
+          <KpiCard title="Avg Quality Score" value={String(kpis?.avgQuality ?? 0)} sub="out of 100" />
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div className="flex flex-wrap gap-3">
@@ -155,7 +130,7 @@ export function DashboardPage() {
         <div className="lg:col-span-2 bg-surface-elevated border border-surface-border rounded-lg p-4">
           <h2 className="text-sm font-semibold text-text-primary mb-4">Collection Efficiency (episodes/day)</h2>
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={efficiency ?? FALLBACK_EFFICIENCY}>
+            <AreaChart data={efficiency ?? []}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94A3B8' }} />
               <YAxis tick={{ fontSize: 11, fill: '#94A3B8' }} />
@@ -171,17 +146,27 @@ export function DashboardPage() {
         {/* Recent Activity */}
         <div className="bg-surface-elevated border border-surface-border rounded-lg p-4">
           <h2 className="text-sm font-semibold text-text-primary mb-3">Recent Activity</h2>
-          <div className="space-y-3">
-            {(activity ?? FALLBACK_ACTIVITY).map((a) => (
-              <div key={a.id} className="flex gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-mid-blue mt-1.5 shrink-0" />
-                <div>
-                  <p className="text-xs text-text-primary">{a.message}</p>
-                  <p className="text-[10px] text-text-secondary">{a.time}</p>
+          {activityLoading ? (
+            <div className="flex items-center justify-center h-40">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+            </div>
+          ) : activityError ? (
+            <div className="text-center py-10 text-red-400">Failed to load data</div>
+          ) : !activity?.length ? (
+            <div className="text-center py-10 text-gray-400">No activity yet</div>
+          ) : (
+            <div className="space-y-3">
+              {activity.map((a) => (
+                <div key={a.id} className="flex gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-mid-blue mt-1.5 shrink-0" />
+                  <div>
+                    <p className="text-xs text-text-primary">{a.message}</p>
+                    <p className="text-[10px] text-text-secondary">{a.time}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

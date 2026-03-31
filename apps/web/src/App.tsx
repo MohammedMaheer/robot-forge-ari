@@ -44,8 +44,8 @@ export function App() {
         <Route path="/episodes" element={<EpisodesPage />} />
         <Route path="/episodes/:id" element={<EpisodeDetailPage />} />
         <Route path="/marketplace" element={<MarketplacePage />} />
-        <Route path="/marketplace/:id" element={<DatasetDetailPage />} />
         <Route path="/marketplace/cart" element={<CartPage />} />
+        <Route path="/marketplace/:id" element={<DatasetDetailPage />} />
         <Route path="/datasets" element={<MyDatasetsPage />} />
         <Route path="/datasets/new" element={<CreateDatasetPage />} />
         <Route path="/settings" element={<SettingsPage />} />

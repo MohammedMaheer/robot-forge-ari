@@ -7,6 +7,7 @@
 
 import { useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { formatBytes } from '@robotforge/utils';
 
 interface StorageStats {
   totalEpisodes: number;
@@ -25,17 +26,9 @@ interface SyncQueueItem {
 }
 
 interface SyncResult {
-  synced: number;
-  failed: number;
-  remaining: number;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / k ** i).toFixed(1)} ${sizes[i]}`;
+  syncedCount: number;
+  failedCount: number;
+  errors: string[];
 }
 
 export function SyncPage() {
@@ -111,14 +104,11 @@ export function SyncPage() {
         {syncMutation.data && (
           <div className="flex gap-4 text-sm">
             <span className="text-accent-green">
-              ✓ {syncMutation.data.synced} synced
+              ✓ {syncMutation.data.syncedCount} synced
             </span>
-            {syncMutation.data.failed > 0 && (
-              <span className="text-error">✕ {syncMutation.data.failed} failed</span>
+            {syncMutation.data.failedCount > 0 && (
+              <span className="text-error">✕ {syncMutation.data.failedCount} failed</span>
             )}
-            <span className="text-text-secondary">
-              {syncMutation.data.remaining} remaining
-            </span>
           </div>
         )}
       </div>

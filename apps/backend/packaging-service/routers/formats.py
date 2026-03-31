@@ -30,6 +30,16 @@ _FORMATS: dict[str, FormatInfo] = {
         supported_features=["images", "actions", "observations", "video", "metadata", "hf_hub_upload"],
         typical_compression_ratio=0.50,
     ),
+    DatasetFormat.lerobot_v3.value: FormatInfo(
+        name="LeRobot v3.0",
+        description="LeRobot v3.0 Parquet-based format with meta/info.json manifest. "
+        "Supports rosbag2 MCAP → LeRobot conversion matching the SO-101 rosbag_to_lerobot pipeline.",
+        supported_features=[
+            "images", "actions", "observations", "video", "metadata",
+            "hf_hub_upload", "mcap_ingest", "parquet_episodes", "meta_manifest",
+        ],
+        typical_compression_ratio=0.45,
+    ),
     DatasetFormat.huggingface.value: FormatInfo(
         name="Hugging Face Datasets",
         description="Arrow-backed datasets compatible with the Hugging Face Hub ecosystem.",

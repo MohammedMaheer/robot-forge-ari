@@ -1,22 +1,19 @@
-import { useUiStore } from '@/store/uiStore';
+import { useTheme } from '@/contexts/ThemeContext';
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useUiStore();
+  const { resolved, setMode } = useTheme();
 
   const toggle = () => {
-    const next = theme === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-    document.documentElement.classList.toggle('dark', next === 'dark');
-    document.documentElement.classList.toggle('light', next === 'light');
+    setMode(resolved === 'dark' ? 'light' : 'dark');
   };
 
   return (
     <button
       onClick={toggle}
       className="p-1.5 rounded-md text-text-secondary hover:text-text-primary hover:bg-surface transition-colors"
-      title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+      title={`Switch to ${resolved === 'dark' ? 'light' : 'dark'} mode`}
     >
-      {theme === 'dark' ? (
+      {resolved === 'dark' ? (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
         </svg>
@@ -28,3 +25,4 @@ export function ThemeToggle() {
     </button>
   );
 }
+

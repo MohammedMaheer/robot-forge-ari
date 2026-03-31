@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCollectionStore } from '@/store/collectionStore';
 import { apiClient } from '@/lib/api';
+import { useNotifications } from '@/contexts/NotificationContext';
 import type {
   ConnectedRobot,
   RobotEmbodiment,
@@ -12,43 +13,8 @@ import type {
 } from '@robotforge/types';
 
 // ---------------------------------------------------------------------------
-// Fallback robots (used when API is unavailable)
+// Constants
 // ---------------------------------------------------------------------------
-
-const FALLBACK_ROBOTS: ConnectedRobot[] = [
-  {
-    id: 'r-1',
-    name: 'UR5 Workstation A',
-    embodiment: 'ur5',
-    connectionType: 'ros2',
-    ipAddress: '192.168.1.10',
-    status: 'connected',
-    cameras: [
-      { id: 'c1', name: 'overview', resolution: { width: 1280, height: 720 }, fps: 30 },
-      { id: 'c2', name: 'wrist', resolution: { width: 640, height: 480 }, fps: 30 },
-    ],
-  },
-  {
-    id: 'r-2',
-    name: 'Franka Panda Lab',
-    embodiment: 'franka_panda',
-    connectionType: 'grpc',
-    ipAddress: '192.168.1.42',
-    status: 'connected',
-    cameras: [
-      { id: 'c3', name: 'head', resolution: { width: 1280, height: 720 }, fps: 30 },
-    ],
-  },
-  {
-    id: 'r-3',
-    name: 'xArm6 Test',
-    embodiment: 'xarm6',
-    connectionType: 'websocket',
-    ipAddress: '192.168.1.55',
-    status: 'disconnected',
-    cameras: [],
-  },
-];
 
 const EMBODIMENTS: RobotEmbodiment[] = [
   'ur5', 'ur10', 'franka_panda', 'xarm6', 'xarm7',
@@ -87,31 +53,24 @@ function StatusDot({ status }: { status: string }) {
 export function CollectionPage() {
   const navigate = useNavigate();
   const { startSession } = useCollectionStore();
+  const { push } = useNotifications();
+  const queryClient = useQueryClient();
 
   // Step management
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
   // ── Fetch connected robots from API ─────────────────
-  const { data: fetchedRobots = FALLBACK_ROBOTS } = useQuery<ConnectedRobot[]>({
+  const { data: robots = [], isLoading: robotsLoading, isError: robotsError } = useQuery<ConnectedRobot[]>({
     queryKey: ['robots', 'connected'],
     queryFn: async () => {
-      try {
-        const { data } = await apiClient.get('/collection/robots');
-        return data.data ?? data;
-      } catch {
-        return FALLBACK_ROBOTS;
-      }
+      const { data } = await apiClient.get('/collection/robots');
+      return data.data ?? data;
     },
     staleTime: 10_000,
     refetchInterval: 15_000,
   });
 
-  // Step 1 — Robot connection (starts from API data, allows local additions)
-  const [robots, setRobots] = useState<ConnectedRobot[]>(FALLBACK_ROBOTS);
-  // Sync fetched robots into local state
-  React.useEffect(() => {
-    if (fetchedRobots.length > 0) setRobots(fetchedRobots);
-  }, [fetchedRobots]);
+  // Step 1 — Robot connection state
   const [showAddForm, setShowAddForm] = useState(false);
   const [newIp, setNewIp] = useState('');
   const [newEmbodiment, setNewEmbodiment] = useState<RobotEmbodiment>('ur5');
@@ -123,19 +82,11 @@ export function CollectionPage() {
   const [mode, setMode] = useState<SessionMode>('manual');
   const [targetEpisodes, setTargetEpisodes] = useState(50);
 
-  // Add robot handler
-  const handleAddRobot = () => {
+  // Add robot handler — calls API and invalidates query
+  const handleAddRobot = async () => {
     if (!newIp.trim()) return;
-    const robot: ConnectedRobot = {
-      id: `r-${Date.now()}`,
-      name: `${newEmbodiment} @ ${newIp}`,
-      embodiment: newEmbodiment,
-      connectionType: newConnectionType,
-      ipAddress: newIp,
-      status: 'connected',
-      cameras: [],
-    };
-    setRobots((prev) => [...prev, robot]);
+    await apiClient.post('/collection/robots/connect', { name: newEmbodiment + ' @ ' + newIp, embodiment: newEmbodiment, connectionType: 'ethernet', ipAddress: newIp });
+    queryClient.invalidateQueries({ queryKey: ['robots'] });
     setShowAddForm(false);
     setNewIp('');
   };
@@ -157,8 +108,7 @@ export function CollectionPage() {
       });
       navigate(`/collect/${session.id}`);
     } catch {
-      // In mock mode, navigate with a fake session id
-      navigate(`/collect/session-${Date.now()}`);
+      push('error', 'Failed to start session', 'Could not connect to the collection service. Please check your robot connections.');
     }
   };
 
@@ -258,35 +208,45 @@ export function CollectionPage() {
           )}
 
           {/* Robot list */}
-          <div className="space-y-2">
-            {robots.map((robot) => (
-              <label
-                key={robot.id}
-                className={`flex items-center gap-4 p-3 rounded-lg border cursor-pointer transition-colors ${
-                  selectedRobotIds.includes(robot.id)
-                    ? 'border-mid-blue bg-mid-blue/10'
-                    : 'border-surface-border bg-surface hover:bg-surface-elevated'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedRobotIds.includes(robot.id)}
-                  onChange={() => toggleRobot(robot.id)}
-                  className="accent-mid-blue"
-                />
-                <StatusDot status={robot.status} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-text-primary font-medium truncate">{robot.name}</p>
-                  <p className="text-xs text-text-secondary">
-                    {robot.embodiment.replace(/_/g, ' ')} · {robot.connectionType.toUpperCase()} · {robot.ipAddress}
-                  </p>
-                </div>
-                <span className={`text-xs capitalize ${robot.status === 'connected' ? 'text-accent-green' : 'text-text-secondary'}`}>
-                  {robot.status}
-                </span>
-              </label>
-            ))}
-          </div>
+          {robotsLoading ? (
+            <div className="flex items-center justify-center h-40">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+            </div>
+          ) : robotsError ? (
+            <div className="text-center py-10 text-red-400">Failed to load data</div>
+          ) : robots.length === 0 ? (
+            <div className="text-center py-10 text-gray-400">No robots connected yet</div>
+          ) : (
+            <div className="space-y-2">
+              {robots.map((robot) => (
+                <label
+                  key={robot.id}
+                  className={`flex items-center gap-4 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    selectedRobotIds.includes(robot.id)
+                      ? 'border-mid-blue bg-mid-blue/10'
+                      : 'border-surface-border bg-surface hover:bg-surface-elevated'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedRobotIds.includes(robot.id)}
+                    onChange={() => toggleRobot(robot.id)}
+                    className="accent-mid-blue"
+                  />
+                  <StatusDot status={robot.status} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-text-primary font-medium truncate">{robot.name}</p>
+                    <p className="text-xs text-text-secondary">
+                      {robot.embodiment.replace(/_/g, ' ')} · {robot.connectionType.toUpperCase()} · {robot.ipAddress}
+                    </p>
+                  </div>
+                  <span className={`text-xs capitalize ${robot.status === 'connected' ? 'text-accent-green' : 'text-text-secondary'}`}>
+                    {robot.status}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
 
           <div className="flex justify-end pt-2">
             <button

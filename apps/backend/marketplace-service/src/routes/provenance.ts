@@ -7,11 +7,10 @@
  */
 
 import { Router, Request, Response, NextFunction } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
+import type { Prisma } from '../generated/prisma';
 export const provenanceRouter = Router();
 
 function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<void>) {
@@ -118,7 +117,7 @@ provenanceRouter.post(
         datasetId: id,
         actor: req.user!.sub,
         action: parsed.data.action,
-        details: parsed.data.details ?? undefined,
+        details: parsed.data.details as Prisma.InputJsonValue | undefined ?? undefined,
         parentId: parsed.data.parentId ?? undefined,
       },
     });
@@ -133,7 +132,7 @@ export async function recordProvenance(
   datasetId: string,
   actor: string,
   action: string,
-  details?: Record<string, unknown>,
+  details?: Prisma.InputJsonValue,
   parentId?: string,
 ) {
   return prisma.provenanceEvent.create({

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -16,6 +17,7 @@ from models import (
     ProcessingJobStatus,
     QualityReport,
 )
+from deps import CurrentUser
 
 router = APIRouter()
 
@@ -27,7 +29,7 @@ _quality_reports: dict[str, QualityReport] = {}
 
 # Re-use the module-level RabbitMQ objects from main — import lazily at call
 # time to avoid circular imports.
-RABBITMQ_URL = "amqp://guest:guest@localhost:5672/"
+RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 QUEUE_NAME = "processing_tasks"
 
 
@@ -53,8 +55,8 @@ async def _publish_to_queue(payload: dict) -> None:
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@router.post("/", response_model=ProcessingJobResponse, status_code=201)
-async def create_job(body: ProcessingJobCreate) -> ProcessingJobResponse:
+@router.post("/", response_model=dict, status_code=201)
+async def create_job(body: ProcessingJobCreate, current_user: CurrentUser) -> dict:
     """Create a new processing job and enqueue it to RabbitMQ."""
     job_id = uuid.uuid4().hex
     now = datetime.now(timezone.utc)
@@ -62,6 +64,7 @@ async def create_job(body: ProcessingJobCreate) -> ProcessingJobResponse:
     job = ProcessingJobResponse(
         id=job_id,
         episode_id=body.episode_id,
+        operator_id=current_user["sub"],
         status=ProcessingJobStatus.queued,
         steps=[],
         quality_score=None,
@@ -80,53 +83,62 @@ async def create_job(body: ProcessingJobCreate) -> ProcessingJobResponse:
         }
     )
 
-    return job
+    return {"data": job.model_dump()}
 
 
-@router.get("/", response_model=list[ProcessingJobResponse])
+@router.get("/", response_model=dict)
 async def list_jobs(
+    current_user: CurrentUser,
     status: Optional[ProcessingJobStatus] = Query(None, description="Filter by job status"),
-) -> list[ProcessingJobResponse]:
-    """List all processing jobs, optionally filtered by status."""
+) -> dict:
+    """List processing jobs for the authenticated user, optionally filtered by status."""
+    user_id = current_user["sub"]
+    jobs = [j for j in _jobs.values() if j.operator_id == user_id]
     if status is not None:
-        return [j for j in _jobs.values() if j.status == status]
-    return list(_jobs.values())
+        jobs = [j for j in jobs if j.status == status]
+    return {"data": [j.model_dump() for j in jobs]}
 
 
-@router.get("/{job_id}", response_model=ProcessingJobResponse)
-async def get_job(job_id: str) -> ProcessingJobResponse:
+@router.get("/{job_id}", response_model=dict)
+async def get_job(job_id: str, current_user: CurrentUser) -> dict:
     """Retrieve a single processing job by ID."""
     job = _jobs.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job
+    if job.operator_id != current_user["sub"]:
+        raise HTTPException(status_code=403, detail="Not authorized to access this job")
+    return {"data": job.model_dump()}
 
 
-@router.post("/{job_id}/cancel", response_model=ProcessingJobResponse)
-async def cancel_job(job_id: str) -> ProcessingJobResponse:
+@router.post("/{job_id}/cancel", response_model=dict)
+async def cancel_job(job_id: str, current_user: CurrentUser) -> dict:
     """Cancel a queued or running processing job."""
     job = _jobs.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
+    if job.operator_id != current_user["sub"]:
+        raise HTTPException(status_code=403, detail="Not authorized to cancel this job")
 
-    if job.status in (ProcessingJobStatus.completed, ProcessingJobStatus.failed):
+    if job.status in (ProcessingJobStatus.completed, ProcessingJobStatus.failed, ProcessingJobStatus.cancelled):
         raise HTTPException(
             status_code=409,
             detail=f"Cannot cancel job in '{job.status.value}' state",
         )
 
-    job.status = ProcessingJobStatus.failed
+    job.status = ProcessingJobStatus.cancelled
     job.error = "Cancelled by user"
     job.completed_at = datetime.now(timezone.utc)
-    return job
+    return {"data": job.model_dump()}
 
 
-@router.get("/{job_id}/report", response_model=QualityReport)
-async def get_quality_report(job_id: str) -> QualityReport:
+@router.get("/{job_id}/report", response_model=dict)
+async def get_quality_report(job_id: str, current_user: CurrentUser) -> dict:
     """Return the quality report for a completed job."""
     job = _jobs.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
+    if job.operator_id != current_user["sub"]:
+        raise HTTPException(status_code=403, detail="Not authorized to access this report")
 
     report = _quality_reports.get(job_id)
     if report is None:
@@ -134,4 +146,4 @@ async def get_quality_report(job_id: str) -> QualityReport:
             status_code=404,
             detail="Quality report not available (job may not be completed yet)",
         )
-    return report
+    return {"data": report.model_dump()}

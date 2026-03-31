@@ -13,8 +13,12 @@ interface TeleoperationPanelProps {
   onStop: () => void;
   /** Callback when user presses the emergency stop. */
   onEmergencyStop?: () => void;
+  /** Callback when AI-assist mode is toggled. */
+  onAiAssistChange?: (enabled: boolean) => void;
   /** LiveKit room token for video streaming (when available). */
   livekitToken?: string;
+  /** Live quality score (0-100); shown in sidebar. */
+  liveQualityScore?: number;
   className?: string;
 }
 
@@ -64,7 +68,7 @@ function CameraFeed({ name, status, livekitToken }: { name: string; status: stri
 // Component
 // ---------------------------------------------------------------------------
 
-export function TeleoperationPanel({ session, onStart, onStop, onEmergencyStop, livekitToken, className }: TeleoperationPanelProps) {
+export function TeleoperationPanel({ session, onStart, onStop, onEmergencyStop, onAiAssistChange, livekitToken, liveQualityScore, className }: TeleoperationPanelProps) {
   const [aiAssist, setAiAssist] = useState(session.mode === 'ai_assisted');
 
   const isRecording = session.status === 'recording';
@@ -79,7 +83,11 @@ export function TeleoperationPanel({ session, onStart, onStop, onEmergencyStop, 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Space: toggle recording
-      if (e.code === 'Space' && !e.repeat && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
+      if (e.code === 'Space' && !e.repeat) {
+        const target = e.target as HTMLElement;
+        const tag = target?.tagName;
+        const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || target?.isContentEditable;
+        if (isEditable) return;
         e.preventDefault();
         isRecording ? onStop() : onStart();
       }
@@ -116,7 +124,11 @@ export function TeleoperationPanel({ session, onStart, onStop, onEmergencyStop, 
         <div className="flex items-center gap-2">
           {/* AI-Assist Toggle */}
           <button
-            onClick={() => setAiAssist(!aiAssist)}
+            onClick={() => {
+              const next = !aiAssist;
+              setAiAssist(next);
+              onAiAssistChange?.(next);
+            }}
             className={cn(
               'flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors',
               aiAssist
@@ -217,7 +229,14 @@ export function TeleoperationPanel({ session, onStart, onStop, onEmergencyStop, 
           {/* Quality Score Live */}
           <div className="bg-surface-elevated rounded p-2.5">
             <h4 className="text-[10px] text-text-secondary uppercase tracking-wider">Live Quality</h4>
-            <div className="text-2xl font-bold text-accent-green mt-1">87</div>
+            <div className={cn(
+              'text-2xl font-bold mt-1',
+              liveQualityScore === undefined ? 'text-text-secondary' :
+              liveQualityScore >= 80 ? 'text-accent-green' :
+              liveQualityScore >= 50 ? 'text-amber-400' : 'text-red-400'
+            )}>
+              {liveQualityScore !== undefined ? liveQualityScore : '—'}
+            </div>
             <p className="text-[10px] text-text-secondary">AI-estimated score</p>
           </div>
         </div>
@@ -231,7 +250,7 @@ export function TeleoperationPanel({ session, onStart, onStop, onEmergencyStop, 
               onClick={onStart}
               className="px-4 py-2 bg-accent-green text-white text-sm font-medium rounded hover:bg-green-600 transition-colors"
             >
-              ▶ Start Recording
+              {isPaused ? '⏵ Resume Recording' : '▶ Start Recording'}
             </button>
           ) : (
             <button

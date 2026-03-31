@@ -15,7 +15,7 @@ Built by [Acceleration Robotics](https://accelerationrobotics.com)
 
 ---
 
-ROBOTFORGE is a full-stack monorepo platform that enables robotics teams to **record, process, annotate, score, package, and distribute** teleoperation episodes at scale. It pairs a cross-platform desktop app for on-robot data collection with a cloud microservice backend for processing pipelines and a marketplace for sharing datasets.
+ROBOTFORGE is a full-stack monorepo platform that enables robotics teams to **record, process, annotate, score, package, and distribute** teleoperation episodes at scale. It pairs a cross-platform desktop app for on-robot data collection with a cloud microservice backend for processing pipelines and a marketplace for sharing datasets. The backend is now ROS 2-first, with edge agents that bridge ROS 2 graphs into the cloud and mirror the SO-101 leader/follower, rosbag2, and remote policy-server patterns so multi-robot fleets can be operated and observed through the same API.
 
 </div>
 
@@ -49,6 +49,7 @@ ROBOTFORGE is a full-stack monorepo platform that enables robotics teams to **re
 - **Quality Scoring** — Multi-factor scoring (trajectory smoothness, task completeness, workspace coverage, anomaly detection) with per-episode recommendations
 - **Dataset Marketplace** — Upload, search (Elasticsearch), purchase (Stripe), and download robot datasets with full provenance tracking
 - **Real-time Streaming** — LiveKit-based video + telemetry streaming during collection sessions
+- **ROS 2 Teleoperation & Fleet Control** — rclpy/ros2_control bridge per robot, leader→follower mirroring, rosbag2 + LeRobot-ready recording, and remote policy relay (gRPC/ZMQ) for cloud-hosted inference
 - **OAuth & JWT Auth** — GitHub and Google OAuth, bcrypt password auth, 15-minute access tokens with 30-day HttpOnly refresh tokens
 - **Live Notifications** — Socket.io with Redis adapter for horizontally-scalable push events
 - **Cloud-native Infrastructure** — Dockerized services, Helm chart, Kubernetes manifests, and Terraform for AWS (EKS, Aurora, ElastiCache, S3)
@@ -76,16 +77,25 @@ ROBOTFORGE is a full-stack monorepo platform that enables robotics teams to **re
    ▼      ▼      ▼       ▼          ▼
 ┌──────┐ ┌────┐ ┌──────┐ ┌────────┐ ┌────────────────┐
 │ Auth │ │Mkt │ │Notif.│ │Stream. │ │Python Services │
-│:3001 │ │:3002│ │:3003 │ │:3004   │ │ Collection :8001│
-│      │ │    │ │      │ │        │ │ Processing :8002│
-│Prisma│ │ES  │ │Redis │ │LiveKit │ │ Packaging  :8003│
-│+JWT  │ │    │ │Adapt.│ │        │ │                │
-└──────┘ └────┘ └──────┘ └────────┘ └────────────────┘
+│:3001 │ │:3002│ │:3003 │ │:3004   │ │                │
+│      │ │    │ │      │ │        │ │ Collection :8001│
+│Prisma│ │ES  │ │Redis │ │LiveKit │ │  +rclpy bridge │
+│+JWT  │ │    │ │Adapt.│ │        │ │ Processing :8002│
+└──────┘ └────┘ └──────┘ └────────┘ │ Packaging  :8003│
+                                     └───────┬────────┘
+                                             │
+┌────────────────────────────────────────────┼────────┐
+│           INFRASTRUCTURE                   │        │
+│  PostgreSQL │ Redis │ RabbitMQ │ MinIO │ ES │ Zenoh  │
+└─────────────────────────────────────────────────────┘
             │
 ┌───────────┼──────────────────────────────────────────┐
-│           INFRASTRUCTURE                             │
-│  PostgreSQL │ Redis │ RabbitMQ │ MinIO │ Elasticsearch│
-└─────────────────────────────────────────────────────┘
+│        ROS 2 CONTROL PLANE (via collection-service)  │
+│  rclpy per-robot executors │ ros2_control bridge     │
+│  Rosbag2 MCAP recorder    │ Policy relay (gRPC/ZMQ) │
+│  Fleet management + namespace isolation              │
+│  Leader/follower teleop (SO-101 pattern)             │
+└──────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -109,9 +119,9 @@ robotforge/
 │       ├── marketplace-service/    # Datasets + Stripe → port 3002
 │       ├── notification-service/   # Socket.io → port 3003
 │       ├── streaming-service/      # LiveKit → port 3004
-│       ├── collection-service/     # Python/FastAPI → port 8001
+│       ├── collection-service/     # Python/FastAPI + rclpy ROS 2 bridge → port 8001
 │       ├── processing-service/     # Python/FastAPI + ONNX → port 8002
-│       └── packaging-service/      # Python/FastAPI + HDF5 → port 8003
+│       └── packaging-service/      # Python/FastAPI + LeRobot v3.0 → port 8003
 ├── packages/
 │   ├── types/                      # Shared TypeScript types
 │   ├── ui/                         # Shared React component library (Tailwind)
@@ -139,9 +149,13 @@ robotforge/
 |---|---|---|
 | **Node.js** | 20.0.0 | All TypeScript/JS services and apps |
 | **pnpm** | 9.0.0 | Monorepo package manager |
-| **Python** | 3.11 | Processing, collection, and packaging services |
-| **Docker + Docker Compose** | Current stable | Local infrastructure (Postgres, Redis, etc.) |
+| **Python** | 3.11 — 3.12 recommended | Processing, collection, and packaging services |
+| **Docker + Docker Compose** | Current stable | Local infrastructure (Postgres, Redis, Zenoh, etc.) |
 | **Git** | 2.x | Version control |
+
+> **Python version note:** `onnxruntime` in the processing service only publishes wheels for Python 3.8–3.12. Using Python 3.13+ will cause `pip install` to fail for that service. Install Python 3.12 and create the processing-service venv with `py -3.12 -m venv .venv` (Windows) or `python3.12 -m venv .venv`.
+
+> **ROS 2 note (optional for dev):** The collection-service ROS 2 bridge uses `rclpy` which requires ROS 2 Jazzy (Ubuntu 24.04) or Humble (Ubuntu 22.04) installed on the host or in a container. For local development **without** a physical robot, the service runs in mock mode — no ROS 2 installation required. For robot-connected operation, install ROS 2 Jazzy and source the workspace before starting the collection-service.
 
 **Platform-specific extras:**
 
@@ -169,24 +183,24 @@ cd robot-forge-ari
 cp .env.example .env
 ```
 
-Open `.env` and fill in the secrets that have no working defaults:
+Open `.env` and replace the four sections that have no working defaults:
 
 ```ini
-# Stripe — https://dashboard.stripe.com
+# Stripe — https://dashboard.stripe.com  (only needed for paid dataset purchases)
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_STARTER_PRICE_ID=price_...
 STRIPE_PROFESSIONAL_PRICE_ID=price_...
 
-# GitHub OAuth — https://github.com/settings/developers
+# GitHub OAuth — https://github.com/settings/developers  (only needed for social login)
 GITHUB_CLIENT_ID=...
 GITHUB_CLIENT_SECRET=...
 
-# Google OAuth — https://console.cloud.google.com
+# Google OAuth — https://console.cloud.google.com  (only needed for social login)
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 
-# Change these — never use the defaults in production
+# Change in production — defaults are fine for local dev
 JWT_SECRET=<random-64-char-string>
 JWT_REFRESH_SECRET=<random-64-char-string>
 ```
@@ -195,13 +209,15 @@ All database, Redis, RabbitMQ, MinIO, and LiveKit values in `.env.example` match
 
 ### 3. Start infrastructure
 
+Make sure **Docker Desktop** is running, then:
+
 ```bash
 cd infra
 docker compose up -d
 cd ..
 ```
 
-> **Port conflict note:** ClickHouse native port and MinIO both default to `9000`. Before running, edit `infra/docker-compose.yml` and remap ClickHouse native to `19000:9000`.
+Wait ~30 seconds for Postgres and Elasticsearch to become healthy. You can check with `docker ps`.
 
 ### 4. Install Node.js dependencies
 
@@ -209,51 +225,137 @@ cd ..
 pnpm install
 ```
 
-### 5. Run database migrations
+### 5. Copy environment to each backend service
 
+The Node services each call `dotenv.config()` from their own directory, so `.env` must be present there:
+
+**macOS / Linux:**
 ```bash
-(cd apps/backend/auth-service && pnpm db:generate && pnpm db:migrate)
-(cd apps/backend/marketplace-service && pnpm db:generate && pnpm db:migrate)
+for svc in gateway auth-service marketplace-service notification-service streaming-service; do
+  cp .env apps/backend/$svc/.env
+done
 ```
 
-### 6. Install Python dependencies
+**Windows (PowerShell):**
+```powershell
+foreach ($svc in @("gateway","auth-service","marketplace-service","notification-service","streaming-service")) {
+  Copy-Item .env "apps\backend\$svc\.env"
+}
+```
 
+**Windows (Git Bash / WSL):**
+```bash
+for svc in gateway auth-service marketplace-service notification-service streaming-service; do
+  cp .env apps/backend/$svc/.env
+done
+```
+
+> Re-run this step whenever you change `.env`.
+
+### 6. Run database migrations
+
+Both services share one PostgreSQL database but use separate **PostgreSQL schemas** so their tables cannot collide. Edit each service's `.env` to add a `?schema=` to the `DATABASE_URL`:
+
+```bash
+# apps/backend/auth-service/.env
+DATABASE_URL=postgresql://robotforge:robotforge_dev@localhost:5432/robotforge?schema=auth
+
+# apps/backend/marketplace-service/.env
+DATABASE_URL=postgresql://robotforge:robotforge_dev@localhost:5432/robotforge?schema=marketplace
+```
+
+Then push the schemas:
+
+```bash
+cd apps/backend/auth-service
+pnpm db:push
+
+cd ../marketplace-service
+pnpm db:push
+
+cd ../..
+```
+
+(`db:push` applies the Prisma schema without an interactive migration name prompt. Use `pnpm db:migrate` when you need a named migration history. **Important:** never drop the `?schema=` parameter from the URL — doing so will cause one service's `db:push` to erase the other's tables.)
+
+### 7. Set up Python virtual environments
+
+> **Python version:** Use Python 3.11 or 3.12. `onnxruntime` in the processing service does not publish wheels for Python 3.13+. If your system Python is newer, install 3.12 separately and substitute `py -3.12` / `python3.12` below.
+
+**macOS / Linux:**
 ```bash
 for svc in collection-service processing-service packaging-service; do
   cd apps/backend/$svc
-  python -m venv .venv
-  source .venv/bin/activate        # Windows: .venv\Scripts\activate
+  python3.12 -m venv .venv
+  source .venv/bin/activate
   pip install -r requirements.txt
   deactivate
   cd ../../..
 done
 ```
 
-### 7. Start everything
+**Windows (PowerShell):**
+```powershell
+foreach ($svc in @("collection-service","processing-service","packaging-service")) {
+  cd apps\backend\$svc
+  py -3.12 -m venv .venv
+  .\.venv\Scripts\Activate.ps1
+  pip install -r requirements.txt
+  deactivate
+  cd ..\..\..
+}
+```
 
-**Node services (all at once via Turborepo):**
+### 8. Start everything
 
+**Terminal 1 — All Node services and the web app:**
 ```bash
 pnpm dev
 ```
 
-**Python services (each in a separate terminal):**
+This starts (via Turborepo, concurrently):
+- Web app → **http://localhost:5173**
+- API Gateway → http://localhost:3000
+- Auth service → http://localhost:3001
+- Marketplace service → http://localhost:3002
+- Notification service → http://localhost:3003
+- Streaming service → http://localhost:3004
 
+**Terminal 2 — Collection service:**
+
+macOS / Linux:
 ```bash
-# Terminal 1 — Collection
-cd apps/backend/collection-service && source .venv/bin/activate
+cd apps/backend/collection-service
+source .venv/bin/activate
+export $(grep -v '^#' ../../../.env | xargs)
 uvicorn main:app --reload --port 8001
+```
 
-# Terminal 2 — Processing
-cd apps/backend/processing-service && source .venv/bin/activate
+Windows (PowerShell):
+```powershell
+cd apps\backend\collection-service
+.\.venv\Scripts\Activate.ps1
+Get-Content ..\..\..\.env | Where-Object { $_ -notmatch '^#' } | ForEach-Object { $k,$v = $_.Split('=',2); [System.Environment]::SetEnvironmentVariable($k,$v) }
+uvicorn main:app --reload --port 8001
+```
+
+**Terminal 3 — Processing service:**
+```bash
+cd apps/backend/processing-service
+source .venv/bin/activate          # Windows: .\.venv\Scripts\Activate.ps1
+export $(grep -v '^#' ../../../.env | xargs)
 uvicorn main:app --reload --port 8002
+```
 
-# Terminal 3 — Packaging
-cd apps/backend/packaging-service && source .venv/bin/activate
+**Terminal 4 — Packaging service:**
+```bash
+cd apps/backend/packaging-service
+source .venv/bin/activate          # Windows: .\.venv\Scripts\Activate.ps1
+export $(grep -v '^#' ../../../.env | xargs)
 uvicorn main:app --reload --port 8003
 ```
 
-The web app will be accessible at **http://localhost:5173**.
+The web app is now accessible at **http://localhost:5173**. You can register an account and start using the platform with email/password auth — Stripe and OAuth keys are only needed for paid purchases and social login respectively.
 
 ---
 
@@ -272,6 +374,7 @@ All variables are documented in `.env.example`. Key sections:
 | Auth | `JWT_SECRET`, `JWT_REFRESH_SECRET`, `JWT_ACCESS_EXPIRY`, `JWT_REFRESH_EXPIRY` |
 | OAuth | `GITHUB_CLIENT_ID/SECRET`, `GOOGLE_CLIENT_ID/SECRET`, callback URLs |
 | Payments | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, price IDs |
+| Internal | `INTERNAL_SECRET` — shared secret for service-to-service calls (notification service) |
 | App | `CORS_ORIGIN`, `FRONTEND_URL`, `NODE_ENV` |
 | Frontend (Vite) | `VITE_API_URL`, `VITE_LIVEKIT_URL`, `VITE_WS_URL` |
 
@@ -291,6 +394,7 @@ Started via `docker compose up -d` from the `infra/` directory:
 | Kibana | `kibana:8.11.0` | 5601 | — |
 | ClickHouse | `clickhouse-server` | 8123 (HTTP), 19000 (native) | `robotforge` / `robotforge_dev` |
 | LiveKit | `livekit-server` | 7880, 7881, 7882/UDP | key: `devkey` / secret: `devsecret1234567890abcdef` |
+| Zenoh Router | `eclipse/zenoh` | 7447 (protocol), 8000 (REST) | ROS 2 DDS bridge for edge robots |
 
 ---
 
@@ -389,7 +493,8 @@ FastAPI service for initiating and managing robot teleoperation collection sessi
 
 ```bash
 cd apps/backend/collection-service
-source .venv/bin/activate
+source .venv/bin/activate          # Windows: .\.venv\Scripts\Activate.ps1
+export $(grep -v '^#' ../../../.env | xargs)
 uvicorn main:app --reload --port 8001
 ```
 
@@ -405,7 +510,8 @@ uvicorn main:app --reload --port 8001
 
 ```bash
 cd apps/backend/processing-service
-source .venv/bin/activate
+source .venv/bin/activate          # Windows: .\.venv\Scripts\Activate.ps1
+export $(grep -v '^#' ../../../.env | xargs)
 uvicorn main:app --reload --port 8002
 ```
 
@@ -415,7 +521,8 @@ Final packaging of episodes into LeRobot-compatible HDF5 and PyArrow/Parquet for
 
 ```bash
 cd apps/backend/packaging-service
-source .venv/bin/activate
+source .venv/bin/activate          # Windows: .\.venv\Scripts\Activate.ps1
+export $(grep -v '^#' ../../../.env | xargs)
 uvicorn main:app --reload --port 8003
 ```
 

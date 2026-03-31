@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zenoh
+  namespace: robotforge
+  labels:
+    app: zenoh
+    app.kubernetes.io/part-of: robotforge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zenoh
+  template:
+    metadata:
+      labels:
+        app: zenoh
+    spec:
+      containers:
+        - name: zenoh
+          image: eclipse/zenoh:latest
+          ports:
+            - containerPort: 7447
+              name: zenoh
+            - containerPort: 8000
+              name: rest
+          env:
+            - name: RUST_LOG
+              value: info
+          readinessProbe:
+            httpGet:
+              path: /@/router/local
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /@/router/local
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: zenoh-data
+              mountPath: /var/zenoh
+      volumes:
+        - name: zenoh-data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zenoh
+  namespace: robotforge
+  labels:
+    app: zenoh
+    app.kubernetes.io/part-of: robotforge
+spec:
+  selector:
+    app: zenoh
+  ports:
+    - name: zenoh
+      port: 7447
+      targetPort: 7447
+    - name: rest
+      port: 8000
+      targetPort: 8000

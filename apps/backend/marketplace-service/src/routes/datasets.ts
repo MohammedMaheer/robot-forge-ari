@@ -1,12 +1,10 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { Client } from '@elastic/elasticsearch';
 import Stripe from 'stripe';
 import { z } from 'zod';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, optionalAuth } from '../middleware/auth';
 import { recordProvenance } from './provenance';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
 const esClient = new Client({ node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200' });
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2024-06-20' });
 
@@ -75,6 +73,7 @@ datasetsRouter.get(
                   },
                 ],
                 filter: [
+                  { term: { accessLevel: 'public' } },
                   ...(task ? [{ term: { task } }] : []),
                   ...(embodiment ? [{ term: { embodiments: embodiment } }] : []),
                 ],
@@ -83,7 +82,7 @@ datasetsRouter.get(
           },
         });
 
-        const hits = esResult.hits.hits.map((h: Record<string, unknown>) => ({
+        const hits = (esResult.hits.hits as any[]).map((h) => ({
           id: h._id,
           ...(h._source as Record<string, unknown>),
         }));
@@ -188,10 +187,42 @@ datasetsRouter.post(
   })
 );
 
+// ── GET /datasets/mine ────────────────────────────────────
+
+datasetsRouter.get(
+  '/mine',
+  requireAuth(),
+  asyncHandler(async (req: Request, res: Response) => {
+    const {
+      page = '1',
+      limit = '20',
+    } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page as string, 10));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string, 10)));
+
+    const [datasets, total] = await Promise.all([
+      prisma.dataset.findMany({
+        where: { ownerId: req.user!.sub },
+        orderBy: { updatedAt: 'desc' },
+        skip: (pageNum - 1) * limitNum,
+        take: limitNum,
+      }),
+      prisma.dataset.count({ where: { ownerId: req.user!.sub } }),
+    ]);
+
+    res.json({
+      data: datasets,
+      meta: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) },
+    });
+  })
+);
+
 // ── GET /datasets/:id ─────────────────────────────────────
 
 datasetsRouter.get(
   '/:id',
+  optionalAuth(),
   asyncHandler(async (req: Request, res: Response) => {
     const dataset = await prisma.dataset.findUnique({
       where: { id: req.params.id },
@@ -200,6 +231,11 @@ datasetsRouter.get(
 
     if (!dataset) {
       res.status(404).json({ code: 'NOT_FOUND', message: 'Dataset not found' });
+      return;
+    }
+
+    if (dataset.accessLevel === 'private' && req.user?.sub !== dataset.ownerId) {
+      res.status(403).json({ code: 'FORBIDDEN', message: 'This dataset is private' });
       return;
     }
 
@@ -221,6 +257,15 @@ datasetsRouter.post(
 
     if (dataset.pricingTier === 'free') {
       // Free dataset — no Stripe needed
+      // Duplicate check: return existing completed purchase instead of creating a new one
+      const existing = await prisma.purchase.findFirst({
+        where: { userId: req.user!.sub, datasetId: dataset.id, status: 'completed' },
+      });
+      if (existing) {
+        res.json({ data: { purchase: existing, downloadUrl: dataset.storageUrl } });
+        return;
+      }
+
       const purchase = await prisma.purchase.create({
         data: {
           userId: req.user!.sub,
@@ -246,6 +291,15 @@ datasetsRouter.post(
     }
 
     // Paid dataset — create Stripe checkout
+    // Duplicate check: if already purchased, return existing record
+    const existingPurchase = await prisma.purchase.findFirst({
+      where: { userId: req.user!.sub, datasetId: dataset.id, status: 'completed' },
+    });
+    if (existingPurchase) {
+      res.json({ data: { purchase: existingPurchase, downloadUrl: dataset.storageUrl } });
+      return;
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       payment_method_types: ['card'],
@@ -319,6 +373,26 @@ datasetsRouter.post(
     const dataset = await prisma.dataset.findUnique({ where: { id: req.params.id } });
     if (!dataset) {
       res.status(404).json({ code: 'NOT_FOUND', message: 'Dataset not found' });
+      return;
+    }
+
+    // Users may only review datasets they have purchased (or own, or are free)
+    if (dataset.ownerId !== req.user!.sub && dataset.pricingTier !== 'free') {
+      const purchase = await prisma.purchase.findFirst({
+        where: { datasetId: dataset.id, userId: req.user!.sub, status: 'completed' },
+      });
+      if (!purchase) {
+        res.status(403).json({ code: 'PURCHASE_REQUIRED', message: 'You must purchase this dataset before reviewing it' });
+        return;
+      }
+    }
+
+    // Prevent duplicate reviews
+    const existingReview = await prisma.review.findFirst({
+      where: { datasetId: dataset.id, userId: req.user!.sub },
+    });
+    if (existingReview) {
+      res.status(409).json({ code: 'ALREADY_REVIEWED', message: 'You have already reviewed this dataset' });
       return;
     }
 

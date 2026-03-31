@@ -20,33 +20,6 @@ const EMBODIMENTS: RobotEmbodiment[] = [
 
 const STATUSES: EpisodeStatus[] = ['recording', 'processing', 'packaged', 'listed', 'failed'];
 
-// Fallback data when API is unavailable
-const FALLBACK_EPISODES: Episode[] = Array.from({ length: 24 }, (_, i) => ({
-  id: `ep-${1000 + i}`,
-  sessionId: `sess-${Math.floor(i / 4) + 1}`,
-  robotId: `r-${(i % 3) + 1}`,
-  embodiment: EMBODIMENTS[i % EMBODIMENTS.length],
-  task: TASKS[i % TASKS.length],
-  durationMs: 10000 + Math.floor(Math.random() * 30000),
-  frameCount: 200 + Math.floor(Math.random() * 500),
-  qualityScore: 55 + Math.floor(Math.random() * 45),
-  status: i < 20 ? 'packaged' : STATUSES[i % STATUSES.length],
-  sensorModalities: ['rgb_camera', 'joint_positions', 'end_effector_pose'],
-  thumbnailUrl: undefined,
-  metadata: {
-    environment: 'lab',
-    lighting: 'bright',
-    objectVariety: 3 + (i % 5),
-    successLabel: i % 5 !== 0 ? true : null,
-    operatorId: 'user-1',
-    aiAssisted: i % 3 === 0,
-    compressionRatio: 3.5 + Math.random(),
-    rawSizeBytes: 40_000_000 + Math.floor(Math.random() * 20_000_000),
-    compressedSizeBytes: 10_000_000 + Math.floor(Math.random() * 5_000_000),
-  },
-  createdAt: new Date(Date.now() - i * 3600 * 1000),
-}));
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -60,29 +33,17 @@ export function EpisodesPage() {
   const [statusFilter, setStatusFilter] = useState<EpisodeStatus | ''>('');
 
   // ── Fetch episodes from API with server-side filter ───
-  const { data: episodes = FALLBACK_EPISODES, isLoading } = useQuery<Episode[]>({
+  const { data: episodes, isLoading, isError } = useQuery<Episode[]>({
     queryKey: ['episodes', taskFilter, embodimentFilter, statusFilter],
     queryFn: async () => {
-      try {
-        const params: Record<string, string> = {};
-        if (taskFilter) params.task = taskFilter;
-        if (embodimentFilter) params.embodiment = embodimentFilter;
-        if (statusFilter) params.status = statusFilter;
-        const { data } = await apiClient.get('/collection/episodes', { params });
-        return data.data ?? data;
-      } catch {
-        // Graceful fallback to local data when API unavailable
-        return FALLBACK_EPISODES;
-      }
+      const params: Record<string, string> = {};
+      if (taskFilter) params.task = taskFilter;
+      if (embodimentFilter) params.embodiment = embodimentFilter;
+      if (statusFilter) params.status = statusFilter;
+      const { data } = await apiClient.get('/collection/episodes', { params });
+      return data.data ?? data;
     },
     staleTime: 15_000,
-  });
-
-  const filteredEpisodes = episodes.filter((ep) => {
-    if (taskFilter && ep.task !== taskFilter) return false;
-    if (embodimentFilter && ep.embodiment !== embodimentFilter) return false;
-    if (statusFilter && ep.status !== statusFilter) return false;
-    return true;
   });
 
   const handleSelect = (id: string) => {
@@ -144,13 +105,23 @@ export function EpisodesPage() {
         </div>
 
         <div className="ml-auto text-xs text-text-secondary self-end pb-1">
-          {filteredEpisodes.length} episode{filteredEpisodes.length !== 1 ? 's' : ''}
+          {(episodes ?? []).length} episode{(episodes ?? []).length !== 1 ? 's' : ''}
         </div>
       </div>
 
       {/* Table */}
       <div className="bg-surface-elevated border border-surface-border rounded-lg overflow-hidden">
-        <EpisodeTable episodes={filteredEpisodes} onSelect={handleSelect} />
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="w-6 h-6 border-2 border-mid-blue border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : isError ? (
+          <div className="text-center py-10 text-red-400">Failed to load data</div>
+        ) : !episodes?.length ? (
+          <div className="text-center py-10 text-gray-400">No episodes yet</div>
+        ) : (
+          <EpisodeTable episodes={episodes} onSelect={handleSelect} />
+        )}
       </div>
     </div>
   );

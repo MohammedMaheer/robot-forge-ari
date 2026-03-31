@@ -1,6 +1,6 @@
-import React, { useRef, useEffect, useMemo, useState, useCallback, Suspense } from 'react';
-import { Canvas, useFrame, useThree, useLoader } from '@react-three/fiber';
-import { OrbitControls, Grid, Environment, Html } from '@react-three/drei';
+import React, { useRef, useMemo, Suspense } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { OrbitControls, Grid, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { RobotTelemetry } from '@robotforge/types';
 import { cn } from '../utils/cn';
@@ -49,6 +49,8 @@ function JointVisualizer({ telemetry, showLabels }: JointVisualizerProps) {
 
   // Build a simple skeleton from joint count
   const jointCount = telemetry?.jointPositions.length ?? 6;
+  // Only include telemetry in deps when labels are visible — avoids 50Hz mesh recreation
+  const telemetryForLabels = showLabels ? telemetry : null;
   const links = useMemo(() => {
     const segments: React.ReactElement[] = [];
     for (let i = 0; i < jointCount; i++) {
@@ -75,7 +77,7 @@ function JointVisualizer({ telemetry, showLabels }: JointVisualizerProps) {
       );
     }
     return segments;
-  }, [jointCount]);
+  }, [jointCount, showLabels, telemetryForLabels]);
 
   return <group ref={groupRef}>{links}</group>;
 }
@@ -177,7 +179,7 @@ function RobotScene({ telemetry, showLabels, showTrajectory }: { telemetry?: Rob
 export function RobotViewer({ urdfUrl, telemetry, width, height, className, showLabels = false, showTrajectory = true, cameraPosition }: RobotViewerProps) {
   return (
     <div
-      className={cn('rounded-lg overflow-hidden bg-surface border border-surface-border', className)}
+      className={cn('relative rounded-lg overflow-hidden bg-surface border border-surface-border', className)}
       style={{ width: width ?? '100%', height: height ?? 400 }}
     >
       <Canvas
@@ -197,8 +199,8 @@ export function RobotViewer({ urdfUrl, telemetry, width, height, className, show
         <div className="absolute bottom-2 left-2 bg-black/70 rounded px-2 py-1 text-[10px] text-text-secondary space-y-0.5 backdrop-blur-sm">
           <p>EE: ({telemetry.endEffectorPose.x.toFixed(3)}, {telemetry.endEffectorPose.y.toFixed(3)}, {telemetry.endEffectorPose.z.toFixed(3)})</p>
           <p>Joints: {telemetry.jointPositions.length} DoF</p>
-          {telemetry.gripperState !== undefined && (
-            <p>Gripper: {telemetry.gripperState.toFixed(0)}%</p>
+          {telemetry.gripperPosition !== undefined && (
+            <p>Gripper: {telemetry.gripperPosition.toFixed(0)}%</p>
           )}
         </div>
       )}

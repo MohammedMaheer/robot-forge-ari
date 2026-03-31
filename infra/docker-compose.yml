@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   # ── PostgreSQL with TimescaleDB ──────────────────────────
   postgres:
@@ -132,7 +130,7 @@ services:
     restart: unless-stopped
     ports:
       - "8123:8123"
-      - "9000:9000"
+      - "19000:9000"
     environment:
       - CLICKHOUSE_DB=robotforge_analytics
       - CLICKHOUSE_USER=robotforge
@@ -158,6 +156,24 @@ services:
       - LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}:${LIVEKIT_API_SECRET:-devsecret1234567890abcdef}
     command: --dev --bind 0.0.0.0
 
+  # ── Zenoh Router (DDS/ROS 2 bridge) ─────────────────────
+  zenoh:
+    image: eclipse/zenoh:latest
+    container_name: robotforge-zenoh
+    restart: unless-stopped
+    ports:
+      - "7447:7447"
+      - "8000:8000"
+    environment:
+      - RUST_LOG=info
+    volumes:
+      - zenoh_data:/var/zenoh
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/@/router/local || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
   redis_data:
@@ -166,3 +182,4 @@ volumes:
   elasticsearch_data:
   logstash_pipeline:
   clickhouse_data:
+  zenoh_data:

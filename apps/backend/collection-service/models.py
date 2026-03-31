@@ -1,9 +1,16 @@
-"""Pydantic models for the Collection Service."""
+"""Pydantic models for the Collection Service.
+
+Covers robot connection, session management, episode recording, and
+ROS 2 fleet / rosbag2 recording / policy-server relay domains.
+"""
 
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 from enum import Enum
+
+
+# ── Core Enums ─────────────────────────────────────────────
 
 
 class RobotEmbodiment(str, Enum):
@@ -12,6 +19,8 @@ class RobotEmbodiment(str, Enum):
     franka_panda = "franka_panda"
     xarm6 = "xarm6"
     xarm7 = "xarm7"
+    so100 = "so100"
+    so101 = "so101"
     unitree_h1 = "unitree_h1"
     unitree_g1 = "unitree_g1"
     figure01 = "figure01"
@@ -31,6 +40,7 @@ class RobotTask(str, Enum):
     surgical = "surgical"
     manipulation = "manipulation"
     whole_body_loco = "whole_body_loco"
+    leader_follower = "leader_follower"
     custom = "custom"
 
 
@@ -44,6 +54,7 @@ class ConnectionType(str, Enum):
 class SessionMode(str, Enum):
     manual = "manual"
     ai_assisted = "ai_assisted"
+    leader_follower = "leader_follower"
 
 
 class SessionStatus(str, Enum):
@@ -68,6 +79,107 @@ class EpisodeStatus(str, Enum):
     failed = "failed"
 
 
+# ── ROS 2 Enums ───────────────────────────────────────────
+
+
+class ControllerState(str, Enum):
+    unconfigured = "unconfigured"
+    inactive = "inactive"
+    active = "active"
+    finalized = "finalized"
+
+
+class StorageFormat(str, Enum):
+    mcap = "mcap"
+    sqlite3 = "sqlite3"
+
+
+class PolicyProtocol(str, Enum):
+    grpc = "grpc"
+    zmq = "zmq"
+
+
+class RecordingState(str, Enum):
+    recording = "recording"
+    stopped = "stopped"
+    converting = "converting"
+    completed = "completed"
+    error = "error"
+
+
+# ── ROS 2 Models ──────────────────────────────────────────
+
+
+class Ros2TopicInfo(BaseModel):
+    name: str
+    message_type: str
+    hz: Optional[float] = None
+
+
+class Ros2NodeStatus(BaseModel):
+    node_active: bool = False
+    controller_state: ControllerState = ControllerState.unconfigured
+    dds_connected: bool = False
+    topics: list[Ros2TopicInfo] = []
+    last_heartbeat: Optional[datetime] = None
+
+
+class FleetRobot(BaseModel):
+    robot_id: str
+    name: str
+    namespace: str = ""
+    embodiment: RobotEmbodiment = RobotEmbodiment.custom
+    connection_type: ConnectionType = ConnectionType.ros2
+    status: RobotStatus = RobotStatus.disconnected
+    ros2_status: Optional[Ros2NodeStatus] = None
+
+
+class FleetStatus(BaseModel):
+    total_robots: int = 0
+    active_robots: int = 0
+    namespaces: list[str] = []
+    dds_graph_healthy: bool = False
+    robots: list[FleetRobot] = []
+
+
+class RecordingStartRequest(BaseModel):
+    session_id: str
+    topic_filters: list[str] = Field(default_factory=list, description="ROS 2 topic patterns to record (empty = all)")
+    storage_format: StorageFormat = StorageFormat.mcap
+
+
+class RosbagRecording(BaseModel):
+    id: str
+    session_id: str
+    status: RecordingState = RecordingState.recording
+    storage_format: StorageFormat = StorageFormat.mcap
+    file_path: Optional[str] = None
+    file_size_mb: float = 0
+    duration_seconds: float = 0
+    topics_recorded: list[str] = []
+    message_count: int = 0
+    started_at: Optional[datetime] = None
+    stopped_at: Optional[datetime] = None
+
+
+class PolicyConnectRequest(BaseModel):
+    address: str = Field(..., description="Policy server address (host:port)")
+    protocol: PolicyProtocol = PolicyProtocol.grpc
+    model_name: str = Field(..., description="Model to load (e.g. act, smolvla, pi0)")
+    robot_id: Optional[str] = Field(None, description="Robot to bind policy output to")
+
+
+class PolicyServerStatus(BaseModel):
+    connected: bool = False
+    address: Optional[str] = None
+    protocol: Optional[PolicyProtocol] = None
+    model_name: Optional[str] = None
+    bound_robot_id: Optional[str] = None
+    avg_latency_ms: float = 0
+    inference_count: int = 0
+    last_inference_at: Optional[datetime] = None
+
+
 # ── Request/Response Models ────────────────────────────────
 
 
@@ -77,6 +189,7 @@ class RobotConnectRequest(BaseModel):
     connection_type: ConnectionType
     ip_address: str
     port: Optional[int] = None
+    ros2_namespace: Optional[str] = Field(None, description="ROS 2 namespace, e.g. /robot/arm1")
 
 
 class CameraStream(BaseModel):
@@ -95,6 +208,8 @@ class ConnectedRobot(BaseModel):
     status: RobotStatus = RobotStatus.connected
     battery_level: Optional[int] = None
     cameras: list[CameraStream] = []
+    ros2_namespace: Optional[str] = None
+    ros2_status: Optional[Ros2NodeStatus] = None
 
 
 class SessionCreateRequest(BaseModel):
@@ -107,6 +222,7 @@ class SessionCreateRequest(BaseModel):
 class CollectionSession(BaseModel):
     id: str
     operator_id: str
+    task: RobotTask
     robots: list[ConnectedRobot] = []
     status: SessionStatus = SessionStatus.idle
     mode: SessionMode = SessionMode.manual
@@ -125,6 +241,7 @@ class EpisodeMetadata(BaseModel):
     compression_ratio: float = 1.0
     raw_size_bytes: int = 0
     compressed_size_bytes: int = 0
+    rosbag_id: Optional[str] = None
 
 
 class Episode(BaseModel):

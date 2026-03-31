@@ -11,13 +11,16 @@
  */
 
 import { EventEmitter } from 'node:events';
-import { v4 as uuid } from 'uuid';
+import fs from 'node:fs';
+import path from 'node:path';
 
 interface DaemonConfig {
   sessionId: string;
   robotId: string;
   task: string;
   sampleRateHz: number;
+  /** Directory to write episode telemetry JSON files; defaults to os.tmpdir(). */
+  episodeDataDir?: string;
 }
 
 interface DaemonStatus {
@@ -33,7 +36,8 @@ interface TelemetrySample {
   jointPositions: number[];
   jointVelocities: number[];
   jointTorques: number[];
-  endEffectorPose: number[];  // [x, y, z, qx, qy, qz, qw]
+  /** 6-DOF end-effector pose matching the Pose6D type (x, y, z in metres; rx, ry, rz euler). */
+  endEffectorPose: { x: number; y: number; z: number; rx: number; ry: number; rz: number };
   gripperPosition: number;
   forceTorque: number[];      // [fx, fy, fz, tx, ty, tz]
 }
@@ -118,7 +122,7 @@ export class CollectionDaemon extends EventEmitter {
     if (!this._running) throw new Error('Daemon not running');
     if (this._currentEpisodeId) throw new Error('Episode already in progress');
 
-    this._currentEpisodeId = uuid();
+    this._currentEpisodeId = crypto.randomUUID();
     this._buffer = [];
 
     return this._currentEpisodeId;
@@ -129,16 +133,36 @@ export class CollectionDaemon extends EventEmitter {
       throw new Error(`Episode ${episodeId} is not the active episode`);
     }
 
-    const duration = this._buffer.length > 0
-      ? this._buffer[this._buffer.length - 1].timestamp - this._buffer[0].timestamp
+    const buffer = this._buffer;
+    const duration = buffer.length > 0
+      ? buffer[buffer.length - 1].timestamp - buffer[0].timestamp
       : 0;
 
-    // In production: write buffer to HDF5 via subprocess, queue for sync
+    // Persist telemetry buffer to a JSON file in episodeDataDir (or os.tmpdir())
+    let telemetryPath: string | undefined;
+    try {
+      const dataDir = this.config?.episodeDataDir ?? (await import('node:os')).tmpdir();
+      fs.mkdirSync(dataDir, { recursive: true });
+      telemetryPath = path.join(dataDir, `${episodeId}.json`);
+      fs.writeFileSync(telemetryPath, JSON.stringify({
+        episodeId,
+        sessionId: this.config?.sessionId,
+        robotId: this.config?.robotId,
+        task: this.config?.task,
+        durationMs: duration,
+        sampleCount: buffer.length,
+        samples: buffer,
+      }, null, 2), 'utf8');
+    } catch (err) {
+      console.error('[daemon] Failed to persist episode telemetry:', err);
+    }
+
     this.emit('episode-complete', {
       id: episodeId,
       durationMs: duration,
       task: this.config?.task ?? 'unknown',
-      samples: this._buffer.length,
+      samples: buffer.length,
+      telemetryPath,
     });
 
     this._currentEpisodeId = null;
@@ -165,12 +189,14 @@ export class CollectionDaemon extends EventEmitter {
       jointTorques: Array.from({ length: 7 }, (_, i) =>
         Math.sin(phase + i * 0.3) * 5.0 + (Math.random() - 0.5) * 0.5,
       ),
-      endEffectorPose: [
-        0.4 + Math.sin(phase) * 0.1,
-        Math.cos(phase) * 0.15,
-        0.5 + Math.sin(phase * 0.5) * 0.05,
-        0, 0, Math.sin(phase * 0.25), Math.cos(phase * 0.25),
-      ],
+      endEffectorPose: {
+        x: 0.4 + Math.sin(phase) * 0.1,
+        y: Math.cos(phase) * 0.15,
+        z: 0.5 + Math.sin(phase * 0.5) * 0.05,
+        rx: 0,
+        ry: 0,
+        rz: Math.sin(phase * 0.25),
+      },
       gripperPosition: (Math.sin(phase * 2) + 1) / 2, // 0-1
       forceTorque: Array.from({ length: 6 }, () => (Math.random() - 0.5) * 2),
     };

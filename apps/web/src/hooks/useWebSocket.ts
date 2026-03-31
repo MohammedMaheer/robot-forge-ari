@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '@/store/authStore';
 
@@ -11,6 +11,7 @@ interface UseWebSocketOptions {
 
 export function useWebSocket({ namespace, autoConnect = true }: UseWebSocketOptions) {
   const socketRef = useRef<Socket | null>(null);
+  const [connected, setConnected] = useState(false);
   const { accessToken } = useAuthStore();
 
   useEffect(() => {
@@ -27,15 +28,22 @@ export function useWebSocket({ namespace, autoConnect = true }: UseWebSocketOpti
 
     socket.on('connect', () => {
       console.log(`[ws] Connected to ${namespace}`);
+      setConnected(true);
+    });
+
+    socket.on('disconnect', () => {
+      setConnected(false);
     });
 
     socket.on('connect_error', (err) => {
       console.error(`[ws] ${namespace} connection error:`, err.message);
+      setConnected(false);
     });
 
     return () => {
       socket.disconnect();
       socketRef.current = null;
+      setConnected(false);
     };
   }, [namespace, accessToken, autoConnect]);
 
@@ -54,6 +62,6 @@ export function useWebSocket({ namespace, autoConnect = true }: UseWebSocketOpti
     socket: socketRef.current,
     emit,
     on,
-    connected: socketRef.current?.connected ?? false,
+    connected,
   };
 }

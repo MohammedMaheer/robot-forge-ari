@@ -19,10 +19,12 @@ from pipeline.steps import (
     annotation,
     compression,
     frame_filtering,
+    mcap_ingest,
     packaging,
     quality_scoring,
 )
 from routers.jobs import _jobs, _quality_reports
+from deps import CurrentUser
 
 router = APIRouter()
 
@@ -30,6 +32,10 @@ router = APIRouter()
 # Available steps metadata
 # ---------------------------------------------------------------------------
 STEP_DESCRIPTIONS: dict[str, dict[str, str]] = {
+    ProcessingStepName.mcap_ingest.value: {
+        "name": "MCAP Ingest",
+        "description": "Ingest rosbag2 MCAP files — extract joint states, camera images, and leader actions.",
+    },
     ProcessingStepName.frame_filtering.value: {
         "name": "Frame Filtering",
         "description": "Detect and remove blurry, redundant, or corrupted frames from the episode.",
@@ -48,7 +54,7 @@ STEP_DESCRIPTIONS: dict[str, dict[str, str]] = {
     },
     ProcessingStepName.packaging.value: {
         "name": "Packaging",
-        "description": "Package into the target format (HDF5, RLDS, LeRobot, etc.).",
+        "description": "Package into the target format (HDF5, RLDS, LeRobot v3.0, etc.).",
     },
 }
 
@@ -57,8 +63,8 @@ STEP_DESCRIPTIONS: dict[str, dict[str, str]] = {
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@router.post("/run/{episode_id}", response_model=ProcessingJobResponse)
-async def run_full_pipeline(episode_id: str) -> ProcessingJobResponse:
+@router.post("/run/{episode_id}", response_model=dict)
+async def run_full_pipeline(episode_id: str, current_user: CurrentUser) -> dict:
     """Run the complete 5-step pipeline on an episode.
 
     Creates a job, executes every step sequentially (mock), stores results,
@@ -70,6 +76,7 @@ async def run_full_pipeline(episode_id: str) -> ProcessingJobResponse:
     job = ProcessingJobResponse(
         id=job_id,
         episode_id=episode_id,
+        operator_id=current_user["sub"],
         status=ProcessingJobStatus.running,
         steps=[],
         started_at=now,
@@ -79,6 +86,12 @@ async def run_full_pipeline(episode_id: str) -> ProcessingJobResponse:
     episode_data: dict[str, Any] = {"episode_id": episode_id}
 
     try:
+        # 0. MCAP Ingest (when input is a rosbag2 MCAP)
+        if episode_data.get("mcap_path") or episode_data.get("input_format") == "mcap":
+            job.status = ProcessingJobStatus.running
+            result_mcap = await mcap_ingest(episode_data)
+            job.steps.append(result_mcap)
+
         # 1. Frame filtering
         job.status = ProcessingJobStatus.frame_filtering
         result_ff = await frame_filtering(episode_data)
@@ -122,17 +135,17 @@ async def run_full_pipeline(episode_id: str) -> ProcessingJobResponse:
         job.completed_at = datetime.now(timezone.utc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    return job
+    return {"data": job.model_dump()}
 
 
-@router.get("/steps", response_model=list[dict[str, str]])
-async def list_pipeline_steps() -> list[dict[str, str]]:
+@router.get("/steps", response_model=dict)
+async def list_pipeline_steps(_: CurrentUser) -> dict:
     """List all available pipeline steps with their descriptions."""
-    return list(STEP_DESCRIPTIONS.values())
+    return {"data": list(STEP_DESCRIPTIONS.values())}
 
 
-@router.post("/quality-score", response_model=QualityReport)
-async def compute_quality_score(telemetry: dict[str, Any]) -> QualityReport:
+@router.post("/quality-score", response_model=dict)
+async def compute_quality_score(telemetry: dict[str, Any], _: CurrentUser) -> dict:
     """Compute a quality score from raw telemetry data.
 
     Accepts a JSON object whose ``"data"`` key contains a list-of-lists
@@ -147,4 +160,4 @@ async def compute_quality_score(telemetry: dict[str, Any]) -> QualityReport:
 
     episode_data: dict[str, Any] = {"telemetry": telemetry["data"]}
     report = await quality_scoring(episode_data)
-    return report
+    return {"data": report.model_dump()}

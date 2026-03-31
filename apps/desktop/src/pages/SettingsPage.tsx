@@ -9,7 +9,6 @@ import { useState, useEffect, useCallback } from 'react';
 
 interface SettingsState {
   apiEndpoint: string;
-  authToken: string;
   defaultSampleRate: number;
   storageLocation: string;
   appVersion: string;
@@ -32,7 +31,6 @@ function saveSettings(s: Partial<SettingsState>) {
 
 export function SettingsPage() {
   const [apiEndpoint, setApiEndpoint] = useState('http://localhost:4000');
-  const [authToken, setAuthToken] = useState('');
   const [defaultSampleRate, setDefaultSampleRate] = useState(50);
   const [storageLocation, setStorageLocation] = useState('');
   const [appVersion, setAppVersion] = useState('');
@@ -44,32 +42,37 @@ export function SettingsPage() {
   useEffect(() => {
     const persisted = loadSettings();
     if (persisted.apiEndpoint) setApiEndpoint(persisted.apiEndpoint);
-    if (persisted.authToken) setAuthToken(persisted.authToken);
     if (persisted.defaultSampleRate) setDefaultSampleRate(persisted.defaultSampleRate);
 
     window.electronAPI?.app.getVersion().then((v) => setAppVersion(v ?? ''));
 
     // Storage location heuristic: electron userData path
     setStorageLocation(
-      typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron')
+      typeof window !== 'undefined' && 'electronAPI' in window
         ? 'userData/robotforge.db'
         : 'localStorage',
     );
   }, []);
 
   const handleSave = useCallback(() => {
-    saveSettings({ apiEndpoint, authToken, defaultSampleRate });
+    saveSettings({ apiEndpoint, defaultSampleRate });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-  }, [apiEndpoint, authToken, defaultSampleRate]);
+  }, [apiEndpoint, defaultSampleRate]);
 
   const handleClearData = useCallback(async () => {
     setClearing(true);
     try {
       localStorage.removeItem(STORAGE_KEY);
+      // Also clear episode records from the SQLite DB
+      const episodes = await window.electronAPI?.storage.getEpisodes();
+      if (episodes) {
+        for (const ep of episodes) {
+          await window.electronAPI?.storage.deleteEpisode(ep.id);
+        }
+      }
       // Reset state
       setApiEndpoint('http://localhost:4000');
-      setAuthToken('');
       setDefaultSampleRate(50);
     } finally {
       setClearing(false);
@@ -90,17 +93,6 @@ export function SettingsPage() {
             onChange={(e) => setApiEndpoint(e.target.value)}
             placeholder="https://api.robotforge.io"
             className="w-full rounded-md border border-surface-border bg-surface-elevated px-4 py-2 text-sm text-white placeholder:text-text-secondary focus:border-mid-blue focus:outline-none"
-          />
-        </Field>
-
-        {/* Auth Token */}
-        <Field label="Auth Token">
-          <input
-            type="password"
-            value={authToken}
-            onChange={(e) => setAuthToken(e.target.value)}
-            placeholder="••••••••••••••••"
-            className="w-full rounded-md border border-surface-border bg-surface-elevated px-4 py-2 font-mono text-sm text-white placeholder:text-text-secondary focus:border-mid-blue focus:outline-none"
           />
         </Field>
 

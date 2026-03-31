@@ -3,7 +3,7 @@
  */
 
 import path from 'node:path';
-import { exec } from 'node:child_process';
+import { exec, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { app, shell } from 'electron';
 import type {
@@ -15,6 +15,7 @@ import type {
 } from './PlatformAdapter';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export class LinuxAdapter implements IPlatformAdapter {
   readonly platform = 'linux' as const;
@@ -48,19 +49,20 @@ export class LinuxAdapter implements IPlatformAdapter {
   async enumerateUsbDevices(): Promise<UsbDevice[]> {
     try {
       const { stdout } = await execAsync('lsusb 2>/dev/null');
-      return stdout
-        .split('\n')
-        .filter(Boolean)
-        .map((line) => {
-          const match = line.match(/ID\s+([0-9a-f]{4}):([0-9a-f]{4})\s+(.*)/i);
-          return {
-            vendorId: parseInt(match?.[1] ?? '0', 16),
-            productId: parseInt(match?.[2] ?? '0', 16),
-            manufacturer: '',
-            product: match?.[3] ?? line,
-            path: '',
-          };
+      const regex = /ID\s+([0-9a-f]{4}):([0-9a-f]{4})\s+(.*)/i;
+      const devices: UsbDevice[] = [];
+      for (const line of stdout.split('\n').filter(Boolean)) {
+        const match = line.match(regex);
+        if (!match) continue; // skip malformed lines
+        devices.push({
+          vendorId: parseInt(match[1], 16),
+          productId: parseInt(match[2], 16),
+          manufacturer: '',
+          product: match[3],
+          path: '',
         });
+      }
+      return devices;
     } catch {
       return [];
     }
@@ -108,8 +110,12 @@ export class LinuxAdapter implements IPlatformAdapter {
 
   async getAvailableDiskSpace(targetPath: string): Promise<number> {
     try {
-      const { stdout } = await execAsync(`df -k "${targetPath}" | tail -1 | awk '{print $4}'`);
-      return parseInt(stdout.trim(), 10) * 1024 || 0;
+      // Use execFile to avoid shell injection — df accepts path as a direct argument
+      const { stdout } = await execFileAsync('df', ['-k', targetPath]);
+      const lines = stdout.trim().split('\n');
+      const dataLine = lines[lines.length - 1];
+      const available = parseInt(dataLine.split(/\s+/)[3] ?? '0', 10);
+      return (available || 0) * 1024;
     } catch {
       return 0;
     }

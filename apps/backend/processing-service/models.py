@@ -21,11 +21,13 @@ class ProcessingJobStatus(str, Enum):
     packaging = "packaging"
     completed = "completed"
     failed = "failed"
+    cancelled = "cancelled"
 
 
 class ProcessingStepName(str, Enum):
     """Available processing pipeline steps."""
 
+    mcap_ingest = "mcap_ingest"
     frame_filtering = "frame_filtering"
     compression = "compression"
     annotation = "annotation"
@@ -33,10 +35,25 @@ class ProcessingStepName(str, Enum):
     packaging = "packaging"
 
 
+class InputFormat(str, Enum):
+    """Supported input formats for processing jobs."""
+
+    episode = "episode"
+    mcap = "mcap"
+    rosbag2_sqlite3 = "rosbag2_sqlite3"
+
+
 class ProcessingJobCreate(BaseModel):
     """Request body to create a new processing job."""
 
     episode_id: str = Field(..., description="ID of the episode to process")
+    input_format: InputFormat = Field(
+        default=InputFormat.episode,
+        description="Source format — episodes, MCAP rosbag, or SQLite3 rosbag",
+    )
+    mcap_path: Optional[str] = Field(
+        None, description="Path to MCAP file (required when input_format is mcap)"
+    )
     pipeline_steps: list[ProcessingStepName] = Field(
         default_factory=lambda: list(ProcessingStepName),
         description="Ordered list of pipeline steps to execute",
@@ -64,6 +81,7 @@ class ProcessingJobResponse(BaseModel):
 
     id: str
     episode_id: str
+    operator_id: str = Field("", description="User who created this job")
     status: ProcessingJobStatus
     steps: list[ProcessingStepResult] = Field(default_factory=list)
     quality_score: Optional[float] = Field(

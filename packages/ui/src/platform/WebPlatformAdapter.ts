@@ -61,7 +61,7 @@ class WebStorageAdapter implements StorageAdapter {
 
   async triggerSync(): Promise<SyncResult> {
     // Web app doesn't need local sync — episodes already on server
-    return { synced: 0, failed: 0, pending: 0, lastSyncAt: new Date().toISOString() };
+    return { syncedCount: 0, failedCount: 0, errors: [] };
   }
 }
 
@@ -90,6 +90,10 @@ class WebRobotAdapter implements RobotAdapter {
   }
 
   subscribeTelemetry(robotId: string, callback: (data: RobotTelemetry) => void): () => void {
+    if (this.telemetryWs) {
+      this.telemetryWs.close();
+      this.telemetryWs = null;
+    }
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/collection/ws/teleoperation/${robotId}`;
     this.telemetryWs = new WebSocket(wsUrl);
 

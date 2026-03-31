@@ -11,13 +11,13 @@ import { createProxyMiddleware, Options } from "http-proxy-middleware";
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 
 const SERVICE_MAP: Record<string, string> = {
-  "/api/auth":          "http://localhost:3001",
-  "/api/marketplace":   "http://localhost:3002",
-  "/api/collection":    "http://localhost:8001",
-  "/api/processing":    "http://localhost:8002",
-  "/api/packaging":     "http://localhost:8003",
-  "/api/notifications": "http://localhost:3003",
-  "/api/streams":       "http://localhost:3004",
+  "/api/auth":          process.env.AUTH_SERVICE_URL          ?? "http://localhost:3001",
+  "/api/marketplace":   process.env.MARKETPLACE_SERVICE_URL   ?? "http://localhost:3002",
+  "/api/collection":    process.env.COLLECTION_SERVICE_URL    ?? "http://localhost:8001",
+  "/api/processing":    process.env.PROCESSING_SERVICE_URL    ?? "http://localhost:8002",
+  "/api/packaging":     process.env.PACKAGING_SERVICE_URL     ?? "http://localhost:8003",
+  "/api/notifications": process.env.NOTIFICATION_SERVICE_URL  ?? "http://localhost:3003",
+  "/api/streams":       process.env.STREAMING_SERVICE_URL     ?? "http://localhost:3004",
 };
 
 // ---------------------------------------------------------------------------
@@ -27,9 +27,16 @@ const app = express();
 
 // --- Security & logging ----------------------------------------------------
 app.use(helmet());
+// Support comma-separated origins; fall back to localhost dev origins (never wildcard with credentials)
+const rawOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:5173,http://localhost:3000").split(",").map((o) => o.trim());
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN ?? "*",
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, server-to-server)
+      if (!origin) return callback(null, true);
+      if (rawOrigins.includes(origin)) return callback(null, true);
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
+    },
     credentials: true,
   }),
 );
@@ -57,7 +64,7 @@ for (const [path, target] of Object.entries(SERVICE_MAP)) {
     changeOrigin: true,
     pathRewrite: { [`^${path}`]: "" },
     on: {
-      error(err: Error, _req: Request, res: Response | any) {
+      error(err: Error, _req: any, res: any) {
         console.error(`[proxy] ${path} → ${target} error:`, err.message);
         if (res.writeHead) {
           res.writeHead(502, { "Content-Type": "application/json" });

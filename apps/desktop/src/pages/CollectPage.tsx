@@ -5,7 +5,7 @@
  * (task type, sample rate) and kick off the CollectionDaemon.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 
@@ -34,6 +34,17 @@ export function CollectPage() {
   const navigate = useNavigate();
 
   const [selectedRobot, setSelectedRobot] = useState<DiscoveredRobot | null>(null);
+  const [connectedRobotId, setConnectedRobotId] = useState<string | null>(null);
+  const sessionStartedRef = useRef(false);
+
+  // Disconnect robot if we leave the page before starting a session
+  useEffect(() => {
+    return () => {
+      if (connectedRobotId && !sessionStartedRef.current) {
+        window.electronAPI?.robots.disconnect(connectedRobotId);
+      }
+    };
+  }, [connectedRobotId]);
   const [task, setTask] = useState<string>(TASK_OPTIONS[0]);
   const [sampleRate, setSampleRate] = useState(50);
   const [starting, setStarting] = useState(false);
@@ -50,19 +61,29 @@ export function CollectPage() {
   });
 
   const handleSelectRobot = useCallback(async (robot: DiscoveredRobot) => {
+    // Disconnect the previous robot before connecting a new one
+    if (connectedRobotId) {
+      try {
+        await window.electronAPI?.robots.disconnect(connectedRobotId);
+      } catch {
+        // best-effort disconnect
+      }
+      setConnectedRobotId(null);
+    }
     setSelectedRobot(robot);
     setConnectionStatus('connecting');
     try {
-      await window.electronAPI?.robots.connect({
+      const connected = await window.electronAPI?.robots.connect({
         host: robot.host,
         port: robot.port,
         protocol: 'websocket',
       });
+      if (connected) setConnectedRobotId(connected.id);
       setConnectionStatus('connected');
     } catch {
       setConnectionStatus('error');
     }
-  }, []);
+  }, [connectedRobotId]);
 
   const handleStart = useCallback(async () => {
     if (!selectedRobot) return;
@@ -71,16 +92,17 @@ export function CollectPage() {
       const sessionId = `session-${Date.now().toString(36)}`;
       await window.electronAPI?.daemon.start({
         sessionId,
-        robotId: selectedRobot.id,
+        robotId: connectedRobotId ?? selectedRobot.id,
         task,
         sampleRateHz: sampleRate,
       });
+      sessionStartedRef.current = true;
       navigate(`/session/${sessionId}`);
     } catch (err) {
       console.error('Failed to start session', err);
       setStarting(false);
     }
-  }, [selectedRobot, task, sampleRate, navigate]);
+  }, [selectedRobot, connectedRobotId, task, sampleRate, navigate, sessionStartedRef]);
 
   return (
     <div className="min-h-screen bg-surface p-8 text-white">

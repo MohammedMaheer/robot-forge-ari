@@ -1,13 +1,58 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
+import { useTheme, type ThemeMode } from '@/contexts/ThemeContext';
+import { apiClient } from '@/lib/api';
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export function SettingsPage() {
-  const { user } = useAuthStore();
+  const { user, logout, setUser } = useAuthStore();
+  const { mode, setMode } = useTheme();
+  const navigate = useNavigate();
+
+  const [displayName, setDisplayName] = useState(user?.name ?? '');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [accentColor, setAccentColor] = useState(
+    () => localStorage.getItem('accentColor') ?? 'Blue'
+  );
+
+  const handleAccentColor = (name: string) => {
+    setAccentColor(name);
+    localStorage.setItem('accentColor', name);
+  };
+
+  const handleSaveProfile = async () => {
+    setSaveStatus('saving');
+    try {
+      const { data } = await apiClient.patch('/auth/profile', { name: displayName });
+      if (user && data?.data) {
+        setUser({ ...user, ...data.data });
+      } else if (user) {
+        setUser({ ...user, name: displayName });
+      }
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch {
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!window.confirm('Are you sure you want to delete your account? This cannot be undone.')) return;
+    try {
+      await apiClient.delete('/auth/account');
+      await logout();
+      navigate('/login');
+    } catch {
+      alert('Failed to delete account. Please contact support.');
+    }
+  };
+
+  const saveLabel = saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved!' : saveStatus === 'error' ? 'Error' : 'Save Changes';
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
@@ -37,7 +82,8 @@ export function SettingsPage() {
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">Display Name</label>
             <input
-              defaultValue={user?.name ?? ''}
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
               className="w-full bg-surface border border-surface-border rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-mid-blue transition-colors"
             />
           </div>
@@ -59,8 +105,11 @@ export function SettingsPage() {
         </div>
 
         <div className="flex justify-end pt-2">
-          <button className="px-4 py-2 bg-brand-blue text-white text-sm font-medium rounded-md hover:bg-blue-800 transition-colors">
-            Save Changes
+          <button
+            onClick={handleSaveProfile}
+            disabled={saveStatus === 'saving'}
+            className="px-4 py-2 bg-brand-blue text-white text-sm font-medium rounded-md hover:bg-blue-800 disabled:opacity-60 transition-colors">
+            {saveLabel}
           </button>
         </div>
       </div>
@@ -74,16 +123,17 @@ export function SettingsPage() {
         <div>
           <label className="block text-xs font-medium text-text-secondary mb-1.5">Theme</label>
           <div className="flex gap-3">
-            {['dark', 'light', 'system'].map((theme) => (
+            {(['dark', 'light', 'system'] as ThemeMode[]).map((t) => (
               <button
-                key={theme}
+                key={t}
+                onClick={() => setMode(t)}
                 className={`flex-1 py-2.5 rounded-md text-sm font-medium capitalize transition-colors ${
-                  theme === 'dark'
+                  mode === t
                     ? 'bg-brand-blue text-white'
                     : 'bg-surface border border-surface-border text-text-secondary hover:text-text-primary'
                 }`}
               >
-                {theme === 'dark' ? '🌙 Dark' : theme === 'light' ? '☀️ Light' : '💻 System'}
+                {t === 'dark' ? '🌙 Dark' : t === 'light' ? '☀️ Light' : '💻 System'}
               </button>
             ))}
           </div>
@@ -100,8 +150,9 @@ export function SettingsPage() {
             ].map((color) => (
               <button
                 key={color.name}
+                onClick={() => handleAccentColor(color.name)}
                 className={`w-8 h-8 rounded-full ${color.class} border-2 ${
-                  color.name === 'Blue' ? 'border-white' : 'border-transparent'
+                  accentColor === color.name ? 'border-white' : 'border-transparent'
                 } hover:border-white/60 transition-colors`}
                 title={color.name}
               />
@@ -134,7 +185,7 @@ export function SettingsPage() {
       <div className="bg-surface-elevated border border-red-500/30 rounded-lg p-6">
         <h2 className="text-sm font-semibold text-red-400">Danger Zone</h2>
         <p className="text-xs text-text-secondary mt-1 mb-4">Irreversible and destructive actions</p>
-        <button className="px-4 py-2 bg-red-500/20 text-red-400 text-sm font-medium rounded-md border border-red-500/30 hover:bg-red-500/30 transition-colors">
+        <button onClick={handleDeleteAccount} className="px-4 py-2 bg-red-500/20 text-red-400 text-sm font-medium rounded-md border border-red-500/30 hover:bg-red-500/30 transition-colors">
           Delete Account
         </button>
       </div>

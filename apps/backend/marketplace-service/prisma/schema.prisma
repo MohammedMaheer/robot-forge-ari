@@ -5,6 +5,7 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
 }
 
 model Dataset {
@@ -32,11 +33,16 @@ model Dataset {
 
   reviews   Review[]
   purchases Purchase[]
+  cartItems CartItem[]
   provenance ProvenanceEvent[]
 
   @@index([ownerId])
   @@index([task])
   @@index([pricingTier])
+  @@index([accessLevel])
+  @@index([qualityScore])
+  @@index([downloads])
+  @@index([updatedAt])
   @@map("datasets")
 }
 
@@ -52,6 +58,7 @@ model Review {
   dataset Dataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
 
   @@index([datasetId])
+  @@unique([datasetId, userId])
   @@map("reviews")
 }
 
@@ -61,15 +68,32 @@ model Purchase {
   datasetId       String   @map("dataset_id")
   amount          Int      // cents
   currency        String   @default("usd")
-  stripePaymentId String?  @map("stripe_payment_id")
+  stripePaymentId String?  @unique @map("stripe_payment_id")
   status          String   @default("pending") // pending | completed | refunded
   createdAt       DateTime @default(now()) @map("created_at")
 
-  dataset Dataset @relation(fields: [datasetId], references: [id])
+  dataset Dataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([datasetId])
   @@map("purchases")
+}
+
+// ---------------------------------------------------------------------------
+// Cart
+// ---------------------------------------------------------------------------
+
+model CartItem {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  datasetId String   @map("dataset_id")
+  addedAt   DateTime @default(now()) @map("added_at")
+
+  dataset Dataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, datasetId])
+  @@index([userId])
+  @@map("cart_items")
 }
 
 // ---------------------------------------------------------------------------

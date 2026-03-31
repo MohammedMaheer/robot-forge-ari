@@ -62,8 +62,9 @@ export class RobotForgeApiClient {
     this.client.interceptors.response.use(
       (res) => res,
       async (error) => {
-        const original = error.config as AxiosRequestConfig & { _retry?: boolean };
+        const original = error.config as (AxiosRequestConfig & { _retry?: boolean }) | undefined;
         if (
+          original &&
           error.response?.status === 401 &&
           !original._retry &&
           this.refreshTokenValue
@@ -103,12 +104,12 @@ export class RobotForgeApiClient {
   // ─── Auth ─────────────────────────────────────────────────────
 
   async login(email: string, password: string): Promise<ApiResponse<AuthTokens>> {
-    const { data } = await this.client.post<ApiResponse<AuthTokens>>('/auth/login', {
+    const { data } = await this.client.post<ApiResponse<{ user: User; tokens: AuthTokens }>>('/auth/login', {
       email,
       password,
     });
-    this.setTokens(data.data);
-    return data;
+    this.setTokens(data.data.tokens);
+    return data as unknown as ApiResponse<AuthTokens>;
   }
 
   async register(
@@ -116,13 +117,13 @@ export class RobotForgeApiClient {
     email: string,
     password: string,
   ): Promise<ApiResponse<AuthTokens>> {
-    const { data } = await this.client.post<ApiResponse<AuthTokens>>('/auth/register', {
+    const { data } = await this.client.post<ApiResponse<{ user: User; tokens: AuthTokens }>>('/auth/register', {
       name,
       email,
       password,
     });
-    this.setTokens(data.data);
-    return data;
+    this.setTokens(data.data.tokens);
+    return data as unknown as ApiResponse<AuthTokens>;
   }
 
   async getMe(): Promise<ApiResponse<User>> {
@@ -131,10 +132,12 @@ export class RobotForgeApiClient {
   }
 
   async refreshToken(): Promise<AuthTokens> {
-    const { data } = await this.client.post<ApiResponse<AuthTokens>>('/auth/refresh', {
-      refreshToken: this.refreshTokenValue,
-    });
-    return data.data;
+    const body = this.refreshTokenValue ? { refreshToken: this.refreshTokenValue } : {};
+    const { data } = await this.client.post<ApiResponse<{ tokens: AuthTokens }>>('/auth/refresh', body, {
+      withCredentials: true,
+      _skipAuth: true,
+    } as any);
+    return data.data.tokens;
   }
 
   // ─── Datasets ─────────────────────────────────────────────────

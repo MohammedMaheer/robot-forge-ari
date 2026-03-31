@@ -1,9 +1,11 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import type { ElectronAPI } from '../../electron/preload';
+import { useState, useEffect } from 'react';
 
+// Avoid cross-boundary import from electron/preload by declaring the type locally.
+// This mirrors the shape exposed via contextBridge without importing from the main process.
 declare global {
   interface Window {
-    electronAPI?: ElectronAPI;
+    electronAPI?: Record<string, Record<string, (...args: unknown[]) => unknown>>;
   }
 }
 
@@ -18,6 +20,23 @@ export function DesktopLayout() {
   const handleMinimize = () => window.electronAPI?.window.minimize();
   const handleMaximize = () => window.electronAPI?.window.maximize();
   const handleClose = () => window.electronAPI?.window.close();
+
+  const [daemonRunning, setDaemonRunning] = useState(false);
+
+  // Poll daemon status every 2s to keep the sidebar indicator accurate
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const status = await (window.electronAPI?.daemon.getStatus() as Promise<{ running: boolean }> | undefined);
+        setDaemonRunning(status?.running ?? false);
+      } catch {
+        setDaemonRunning(false);
+      }
+    };
+    poll();
+    const id = setInterval(poll, 2000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <div className="flex h-screen bg-surface text-slate-100 select-none">
@@ -52,8 +71,8 @@ export function DesktopLayout() {
         {/* Connection Status */}
         <div className="px-4 py-3 border-t border-surface-border">
           <div className="flex items-center gap-2 text-xs text-slate-500">
-            <div className="w-2 h-2 rounded-full bg-accent-green animate-pulse" />
-            Ready
+            <div className={`w-2 h-2 rounded-full ${daemonRunning ? 'bg-accent-green animate-pulse' : 'bg-slate-600'}`} />
+            {daemonRunning ? 'Collecting' : 'Idle'}
           </div>
         </div>
       </aside>

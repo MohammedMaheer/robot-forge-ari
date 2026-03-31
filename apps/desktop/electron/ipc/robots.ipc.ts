@@ -2,12 +2,14 @@
  * Robots IPC Handlers
  *
  * Handles robot discovery, connection, telemetry streaming,
- * and command dispatch. In production this bridges to ROS 2
- * via rclnodejs or a WebSocket bridge.
+ * and command dispatch.
+ *
+ * For ROS 2 robots: delegates to the collection-service fleet API
+ * which manages rclpy nodes server-side.  Falls back to mock
+ * discovery when the backend is unreachable.
  */
 
 import type { IpcMain } from 'electron';
-import { v4 as uuid } from 'uuid';
 import {
   robotConnectSchema,
   robotIdSchema,
@@ -23,22 +25,48 @@ interface ConnectedRobot {
   connected: boolean;
   batteryLevel: number;
   temperature: number;
+  ros2Namespace?: string;
+  connectionType?: string;
 }
 
 // In-memory connected robots
 const connectedRobots = new Map<string, ConnectedRobot>();
 
+const COLLECTION_SERVICE_URL =
+  process.env.COLLECTION_SERVICE_URL ?? 'http://localhost:8001';
+
 export function registerRobotsIpc(ipcMain: IpcMain): void {
   /**
    * Discover robots on the local network.
-   * In production: mDNS / ROS 2 discovery / USB enumeration.
+   * First tries the collection-service fleet API (ROS 2 DDS graph),
+   * falls back to mock data if the backend is unreachable.
    */
   ipcMain.handle('robots:discover', async () => {
-    // Mock discovery — return simulated robots
+    try {
+      const res = await fetch(`${COLLECTION_SERVICE_URL}/fleet/robots`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        return (json.data ?? []).map((r: any) => ({
+          id: r.robot_id ?? r.robotId,
+          name: r.name,
+          host: COLLECTION_SERVICE_URL,
+          port: 8001,
+          type: r.embodiment ?? 'custom',
+          connectionType: r.connection_type ?? r.connectionType ?? 'ros2',
+          ros2Namespace: r.namespace ?? '',
+        }));
+      }
+    } catch {
+      // Backend unreachable — fall back to mock
+    }
+
+    // Mock discovery fallback
     return [
-      { id: 'franka-sim-01', name: 'Franka Emika Panda (Sim)', host: '127.0.0.1', port: 9090, type: 'franka' },
-      { id: 'ur5e-sim-01', name: 'UR5e (Sim)', host: '127.0.0.1', port: 9091, type: 'ur5e' },
-      { id: 'aloha-sim-01', name: 'ALOHA Bimanual (Sim)', host: '127.0.0.1', port: 9092, type: 'aloha' },
+      { id: 'franka-sim-01', name: 'Franka Emika Panda (Sim)', host: '127.0.0.1', port: 9090, type: 'franka', connectionType: 'websocket' },
+      { id: 'ur5e-sim-01', name: 'UR5e (Sim)', host: '127.0.0.1', port: 9091, type: 'ur5e', connectionType: 'websocket' },
+      { id: 'so101-sim-01', name: 'SO-101 (Sim)', host: '127.0.0.1', port: 9092, type: 'so101', connectionType: 'ros2', ros2Namespace: '/robot/so101' },
     ];
   });
 
@@ -49,7 +77,7 @@ export function registerRobotsIpc(ipcMain: IpcMain): void {
   ipcMain.handle('robots:connect', async (_event, rawConfig: unknown) => {
     const config = validateIpc(robotConnectSchema, rawConfig, 'robots:connect');
     const timeout = config.timeout ?? 5000;
-    const robotId = `robot-${uuid().slice(0, 8)}`;
+    const robotId = `robot-${crypto.randomUUID().slice(0, 8)}`;
 
     // Simulate connection with timeout
     await new Promise<void>((resolve, reject) => {
@@ -111,7 +139,7 @@ export function registerRobotsIpc(ipcMain: IpcMain): void {
     return {
       id: robot.id,
       connected: robot.connected,
-      batteryLevel: robot.batteryLevel + (Math.random() - 0.5),
+      batteryLevel: Math.max(0, Math.min(100, robot.batteryLevel + (Math.random() - 0.5) * 2)),
       temperature: robot.temperature + (Math.random() - 0.5) * 0.2,
     };
   });

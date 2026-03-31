@@ -86,6 +86,7 @@ export const useAuthStore = create<AuthState>()(
         // Only store accessToken in memory/localStorage; refresh token stays in HttpOnly cookie
         set({
           accessToken: tokens.accessToken,
+          isAuthenticated: true,
         });
       },
 
@@ -100,6 +101,24 @@ export const useAuthStore = create<AuthState>()(
         user: state.user,
         isAuthenticated: state.isAuthenticated,
       }),
+      // Dates are serialized as ISO strings by JSON.stringify.
+      // Restore them to Date objects when the store is re-hydrated.
+      onRehydrateStorage: () => (state) => {
+        if (!state?.user) return;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const raw = state.user as any;
+        if (raw.createdAt) {
+          state.user.createdAt = new Date(raw.createdAt);
+        }
+        if (Array.isArray(raw.apiKeys)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          state.user.apiKeys = raw.apiKeys.map((key: any) => ({
+            ...key,
+            lastUsedAt: key.lastUsedAt ? new Date(key.lastUsedAt) : undefined,
+            expiresAt: key.expiresAt ? new Date(key.expiresAt) : undefined,
+          }));
+        }
+      },
     }
   )
 );

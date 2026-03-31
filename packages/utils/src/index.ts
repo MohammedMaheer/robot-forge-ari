@@ -8,12 +8,16 @@
  * @example formatBytes(1536) → "1.5 KB"
  */
 export function formatBytes(bytes: number, decimals = 1): string {
-  if (bytes === 0) return '0 B';
+  if (bytes < 0 || !Number.isFinite(bytes)) return '0 Bytes';
+  if (bytes === 0) return '0 Bytes';
   const k = 1024;
   const dm = Math.max(0, decimals);
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / k ** i).toFixed(dm)} ${sizes[i]}`;
+  const value = bytes / k ** i;
+  // Drop trailing zeros for clean output (e.g. "1 KB" not "1.0 KB")
+  const formatted = parseFloat(value.toFixed(dm)).toString();
+  return `${formatted} ${sizes[i]}`;
 }
 
 /**

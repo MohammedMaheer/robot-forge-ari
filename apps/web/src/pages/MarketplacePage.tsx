@@ -6,173 +6,6 @@ import { apiClient } from '@/lib/api';
 import type { Dataset, RobotTask, RobotEmbodiment, DatasetFormat } from '@robotforge/types';
 
 // ---------------------------------------------------------------------------
-// Fallback datasets (used when API is unavailable)
-// ---------------------------------------------------------------------------
-
-const FALLBACK_DATASETS: Dataset[] = [
-  {
-    id: 'ds-1',
-    name: 'UR5 Bin Picking Pro',
-    description: 'High-quality bin picking demonstrations with a UR5 robot across 12 object categories.',
-    ownerId: 'user-100',
-    task: 'bin_picking',
-    embodiments: ['ur5'],
-    episodeCount: 2400,
-    totalDurationHours: 48,
-    sizeGb: 62,
-    qualityScore: 92,
-    format: 'lerobot_hdf5',
-    pricingTier: 'professional',
-    pricePerEpisode: 5,
-    tags: ['industrial', 'manipulation', 'grasping'],
-    downloads: 1820,
-    rating: 4.8,
-    sampleEpisodes: [],
-    accessLevel: 'public',
-    licenseType: 'cc_by',
-    createdAt: new Date('2026-01-10'),
-    updatedAt: new Date('2026-02-20'),
-  },
-  {
-    id: 'ds-2',
-    name: 'Franka Assembly Benchmark',
-    description: 'Precision assembly tasks with the Franka Panda, including peg-in-hole and gear meshing.',
-    ownerId: 'user-101',
-    task: 'assembly',
-    embodiments: ['franka_panda'],
-    episodeCount: 1800,
-    totalDurationHours: 36,
-    sizeGb: 45,
-    qualityScore: 88,
-    format: 'robotforge_native',
-    pricingTier: 'starter',
-    pricePerEpisode: 3,
-    tags: ['assembly', 'precision', 'panda'],
-    downloads: 940,
-    rating: 4.5,
-    sampleEpisodes: [],
-    accessLevel: 'public',
-    licenseType: 'cc_by_nc',
-    createdAt: new Date('2026-01-22'),
-    updatedAt: new Date('2026-02-18'),
-  },
-  {
-    id: 'ds-3',
-    name: 'Spot Navigation Indoor',
-    description: 'Indoor navigation and obstacle avoidance demonstrations with Boston Dynamics Spot.',
-    ownerId: 'user-102',
-    task: 'navigation',
-    embodiments: ['boston_dynamics_spot'],
-    episodeCount: 3200,
-    totalDurationHours: 80,
-    sizeGb: 120,
-    qualityScore: 85,
-    format: 'open_x_embodiment',
-    pricingTier: 'enterprise',
-    pricePerEpisode: 8,
-    tags: ['navigation', 'mobile', 'indoor'],
-    downloads: 620,
-    rating: 4.3,
-    sampleEpisodes: [],
-    accessLevel: 'public',
-    licenseType: 'proprietary',
-    createdAt: new Date('2025-12-05'),
-    updatedAt: new Date('2026-02-15'),
-  },
-  {
-    id: 'ds-4',
-    name: 'xArm6 Packing Dataset',
-    description: 'Box packing and palletizing tasks in a warehouse environment with xArm6.',
-    ownerId: 'user-103',
-    task: 'packing',
-    embodiments: ['xarm6'],
-    episodeCount: 1500,
-    totalDurationHours: 25,
-    sizeGb: 34,
-    qualityScore: 79,
-    format: 'lerobot_hdf5',
-    pricingTier: 'free',
-    tags: ['packing', 'logistics', 'warehouse'],
-    downloads: 2100,
-    rating: 4.1,
-    sampleEpisodes: [],
-    accessLevel: 'public',
-    licenseType: 'cc_by',
-    createdAt: new Date('2026-02-01'),
-    updatedAt: new Date('2026-02-22'),
-  },
-  {
-    id: 'ds-5',
-    name: 'Unitree H1 Whole-Body Locomotion',
-    description: 'Whole-body locomotion and manipulation with Unitree H1 humanoid across diverse terrains.',
-    ownerId: 'user-104',
-    task: 'whole_body_loco',
-    embodiments: ['unitree_h1'],
-    episodeCount: 4000,
-    totalDurationHours: 100,
-    sizeGb: 210,
-    qualityScore: 94,
-    format: 'robotforge_native',
-    pricingTier: 'enterprise',
-    pricePerEpisode: 12,
-    tags: ['humanoid', 'locomotion', 'whole-body'],
-    downloads: 380,
-    rating: 4.9,
-    sampleEpisodes: [],
-    accessLevel: 'public',
-    licenseType: 'research_only',
-    createdAt: new Date('2026-01-15'),
-    updatedAt: new Date('2026-02-24'),
-  },
-  {
-    id: 'ds-6',
-    name: 'Multi-Robot Inspection Suite',
-    description: 'Visual inspection tasks combining UR10 and Franka Panda with defect annotations.',
-    ownerId: 'user-105',
-    task: 'inspection',
-    embodiments: ['ur10', 'franka_panda'],
-    episodeCount: 2800,
-    totalDurationHours: 56,
-    sizeGb: 78,
-    qualityScore: 86,
-    format: 'open_x_embodiment',
-    pricingTier: 'professional',
-    pricePerEpisode: 6,
-    tags: ['inspection', 'quality-control', 'multi-robot'],
-    downloads: 710,
-    rating: 4.4,
-    sampleEpisodes: [],
-    accessLevel: 'public',
-    licenseType: 'cc_by_nc',
-    createdAt: new Date('2025-11-20'),
-    updatedAt: new Date('2026-02-10'),
-  },
-  {
-    id: 'ds-7',
-    name: 'Figure01 Manipulation v2',
-    description: 'Dexterous object manipulation with Figure01 humanoid robot in kitchen environments.',
-    ownerId: 'user-106',
-    task: 'manipulation',
-    embodiments: ['figure01'],
-    episodeCount: 1200,
-    totalDurationHours: 30,
-    sizeGb: 55,
-    qualityScore: 90,
-    format: 'robotforge_native',
-    pricingTier: 'professional',
-    pricePerEpisode: 10,
-    tags: ['humanoid', 'manipulation', 'kitchen'],
-    downloads: 450,
-    rating: 4.7,
-    sampleEpisodes: [],
-    accessLevel: 'public',
-    licenseType: 'cc_by',
-    createdAt: new Date('2026-02-05'),
-    updatedAt: new Date('2026-02-23'),
-  },
-];
-
-// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
@@ -219,17 +52,13 @@ export function MarketplacePage() {
   const [sort, setSort] = useState<SortOption>('downloads');
 
   // ── Fetch datasets from API ─────────────────────────
-  const { data: datasets = FALLBACK_DATASETS } = useQuery<Dataset[]>({
+  const { data: datasets, isLoading, isError } = useQuery<Dataset[]>({
     queryKey: ['marketplace', 'datasets', searchTerm],
     queryFn: async () => {
-      try {
-        const params: Record<string, string> = { limit: '50' };
-        if (searchTerm) params.q = searchTerm;
-        const { data } = await apiClient.get('/marketplace/datasets', { params });
-        return data.data ?? data;
-      } catch {
-        return FALLBACK_DATASETS;
-      }
+      const params: Record<string, string> = { limit: '50' };
+      if (searchTerm) params.q = searchTerm;
+      const { data } = await apiClient.get('/marketplace/datasets', { params });
+      return data.data ?? data;
     },
     staleTime: 30_000,
   });
@@ -252,7 +81,7 @@ export function MarketplacePage() {
 
   // Filtered + sorted datasets
   const results = useMemo(() => {
-    let sets = datasets.filter((ds) => {
+    let sets = (datasets ?? []).filter((ds) => {
       if (searchTerm && !ds.name.toLowerCase().includes(searchTerm.toLowerCase()) && !ds.description.toLowerCase().includes(searchTerm.toLowerCase())) return false;
       if (selectedTasks.size > 0 && !selectedTasks.has(ds.task)) return false;
       if (selectedEmbodiments.size > 0 && !ds.embodiments.some((e) => selectedEmbodiments.has(e))) return false;
@@ -384,7 +213,13 @@ export function MarketplacePage() {
         <p className="text-xs text-text-secondary">{results.length} dataset{results.length !== 1 ? 's' : ''} found</p>
 
         {/* Grid */}
-        {results.length === 0 ? (
+        {isLoading ? (
+          <div className="flex items-center justify-center h-40">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+          </div>
+        ) : isError ? (
+          <div className="text-center py-10 text-red-400">Failed to load data</div>
+        ) : results.length === 0 ? (
           <div className="text-center py-16 text-text-secondary text-sm">
             No datasets match your filters.
           </div>

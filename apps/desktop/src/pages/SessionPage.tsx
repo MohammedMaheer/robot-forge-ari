@@ -14,7 +14,7 @@ interface TelemetryData {
   timestamp: number;
   jointPositions: number[];
   jointVelocities: number[];
-  endEffectorPose: number[];
+  endEffectorPose: { x: number; y: number; z: number; rx: number; ry: number; rz: number };
 }
 
 interface DaemonStatus {
@@ -43,7 +43,28 @@ export function SessionPage() {
   const [jointHistory, setJointHistory] = useState<number[][]>([]);
   const [recording, setRecording] = useState(false);
   const [currentEpisodeId, setCurrentEpisodeId] = useState<string | null>(null);
+  // Refs hold the latest values without triggering re-renders on every sample
+  const latestTelemetryRef = useRef<TelemetryData | null>(null);
   const historyRef = useRef<number[][]>([]);
+
+  // Subscribe to live telemetry — buffer in refs to avoid re-rendering at 100Hz
+  useEffect(() => {
+    const unsub = window.electronAPI?.daemon.onTelemetry((data: TelemetryData) => {
+      latestTelemetryRef.current = data;
+      historyRef.current = [...historyRef.current.slice(-59), data.jointPositions];
+    });
+    // Flush buffered telemetry to React state at 20 Hz (every 50ms)
+    const flushInterval = setInterval(() => {
+      if (latestTelemetryRef.current) {
+        setTelemetry(latestTelemetryRef.current);
+        setJointHistory([...historyRef.current]);
+      }
+    }, 50);
+    return () => {
+      unsub?.();
+      clearInterval(flushInterval);
+    };
+  }, []);
 
   const { data: status, refetch: refetchStatus } = useQuery<DaemonStatus>({
     queryKey: ['daemon:status', sessionId],
@@ -52,16 +73,6 @@ export function SessionPage() {
       Promise.resolve({ running: false, paused: false, episodesRecorded: 0, uptimeMs: 0 }),
     refetchInterval: 1000,
   });
-
-  // Subscribe to live telemetry
-  useEffect(() => {
-    const unsub = window.electronAPI?.daemon.onTelemetry((data: TelemetryData) => {
-      setTelemetry(data);
-      historyRef.current = [...historyRef.current.slice(-59), data.jointPositions];
-      setJointHistory([...historyRef.current]);
-    });
-    return () => { unsub?.(); };
-  }, []);
 
   // Sync recording state from daemon status
   useEffect(() => {

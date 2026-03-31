@@ -82,7 +82,7 @@ export function DatasetCard({ dataset, onPurchase, onPreview, className }: Datas
     >
       {/* Thumbnail / preview area */}
       <div className="relative h-40 bg-surface flex items-center justify-center overflow-hidden">
-        {dataset.sampleEpisodes[0]?.thumbnailUrl ? (
+        {dataset.sampleEpisodes?.[0]?.thumbnailUrl ? (
           <img
             src={dataset.sampleEpisodes[0].thumbnailUrl}
             alt={dataset.name}

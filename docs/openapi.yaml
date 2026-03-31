@@ -82,7 +82,7 @@ paths:
           description: Logged out
 
   # ── Episodes ───────────────────────────────────────────
-  /episodes/sessions:
+  /sessions:
     post:
       tags: [Episodes]
       summary: Start a new collection session
@@ -102,7 +102,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Session'
 
-  /episodes/sessions/{id}:
+  /sessions/{id}:
     get:
       tags: [Episodes]
       summary: Get session status
@@ -121,7 +121,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Session'
 
-  /episodes/sessions/{id}/stop:
+  /sessions/{id}/stop:
     post:
       tags: [Episodes]
       summary: Stop session and ingest episodes
@@ -135,6 +135,21 @@ paths:
       responses:
         '200':
           description: Session stopped
+
+  /sessions/{id}/start:
+    post:
+      tags: [Episodes]
+      summary: Start session recording
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Session started
 
   /episodes:
     get:
@@ -191,6 +206,305 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Episode'
+
+  # ── Robots (ROS 2 bridge) ─────────────────────────────
+  /robots:
+    get:
+      tags: [Robots]
+      summary: List connected robots
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Connected robots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConnectedRobot'
+
+  /robots/connect:
+    post:
+      tags: [Robots]
+      summary: Connect to a robot via ROS 2 bridge
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RobotConnectRequest'
+      responses:
+        '200':
+          description: Robot connected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ConnectedRobot'
+
+  /robots/{id}/disconnect:
+    post:
+      tags: [Robots]
+      summary: Disconnect robot
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Robot disconnected
+
+  /robots/{id}/telemetry:
+    get:
+      tags: [Robots]
+      summary: Get latest telemetry snapshot
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Telemetry frame
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/RobotTelemetry'
+
+  # ── Fleet Management (multi-robot ops) ──────────────────
+  /fleet/status:
+    get:
+      tags: [Fleet]
+      summary: Fleet-wide status (all robots, namespaces, DDS graph)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Fleet status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FleetStatus'
+
+  /fleet/robots:
+    get:
+      tags: [Fleet]
+      summary: List all fleet robots with ROS 2 node health
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Fleet robots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FleetRobot'
+
+  /fleet/robots/{id}/namespace:
+    post:
+      tags: [Fleet]
+      summary: Assign robot to ROS 2 namespace
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [namespace]
+              properties:
+                namespace: { type: string, description: "ROS 2 namespace e.g. /robot/arm1" }
+      responses:
+        '200':
+          description: Namespace assigned
+
+  # ── Recording (rosbag2/MCAP) ───────────────────────────
+  /recording/start:
+    post:
+      tags: [Recording]
+      summary: Start rosbag2 MCAP recording for session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordingStartRequest'
+      responses:
+        '200':
+          description: Recording started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingStatus'
+
+  /recording/stop:
+    post:
+      tags: [Recording]
+      summary: Stop recording and return bag metadata
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId]
+              properties:
+                sessionId: { type: string }
+      responses:
+        '200':
+          description: Recording stopped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingStatus'
+
+  /recording/{id}:
+    get:
+      tags: [Recording]
+      summary: Recording status and MCAP file info
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Recording details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingStatus'
+
+  /recording/{id}/convert:
+    post:
+      tags: [Recording]
+      summary: Convert rosbag2 MCAP to LeRobot v3.0 dataset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targetFormat: { type: string, enum: [lerobot, hdf5, rlds], default: lerobot }
+      responses:
+        '200':
+          description: Conversion started
+
+  # ── Policy Server (remote inference relay) ──────────────
+  /policy/connect:
+    post:
+      tags: [Policy]
+      summary: Connect to remote policy server (gRPC/ZMQ)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyConnectRequest'
+      responses:
+        '200':
+          description: Policy server connected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyStatus'
+
+  /policy/disconnect:
+    post:
+      tags: [Policy]
+      summary: Disconnect policy server
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Policy server disconnected
+
+  /policy/infer:
+    post:
+      tags: [Policy]
+      summary: Send observation and receive action from policy server
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [robotId]
+              properties:
+                robotId: { type: string }
+                observation:
+                  type: object
+                  description: "Camera frames + joint states packaged as observation"
+      responses:
+        '200':
+          description: Action received
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action:
+                    type: array
+                    items: { type: number }
+                  latencyMs: { type: number }
+
+  /policy/status:
+    get:
+      tags: [Policy]
+      summary: Policy server connection health
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Policy server status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyStatus'
 
   # ── Datasets (Marketplace) ─────────────────────────────
   /datasets:
@@ -356,18 +670,19 @@ components:
       properties:
         id: { type: string }
         task: { type: string }
-        mode: { type: string, enum: [manual, ai_assisted, autonomous] }
+        mode: { type: string, enum: [manual, ai_assisted] }
         robotIds: { type: array, items: { type: string } }
-        status: { type: string }
+        status: { type: string, enum: [idle, recording, paused, processing] }
         episodeCount: { type: integer }
         startedAt: { type: string, format: date-time }
+        targetEpisodes: { type: integer }
 
     SessionCreate:
       type: object
       required: [task, mode, robotIds]
       properties:
         task: { type: string }
-        mode: { type: string, enum: [manual, ai_assisted, autonomous] }
+        mode: { type: string, enum: [manual, ai_assisted] }
         robotIds: { type: array, items: { type: string } }
         targetEpisodes: { type: integer }
 
@@ -385,6 +700,65 @@ components:
         status: { type: string, enum: [recording, processing, packaged, listed, failed] }
         sensorModalities: { type: array, items: { type: string } }
         createdAt: { type: string, format: date-time }
+
+    RobotConnectRequest:
+      type: object
+      required: [name, embodiment, connectionType, ipAddress]
+      properties:
+        name: { type: string }
+        embodiment: { type: string }
+        connectionType: { type: string, enum: [ros2, grpc, websocket, usb] }
+        ipAddress: { type: string, format: ipv4 }
+        port: { type: integer }
+
+    ConnectedRobot:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        embodiment: { type: string }
+        connectionType: { type: string }
+        ipAddress: { type: string }
+        status: { type: string, enum: [connected, disconnected, error, recording] }
+        batteryLevel: { type: integer }
+        cameras:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              fps: { type: integer }
+              resolution:
+                type: object
+                properties:
+                  width: { type: integer }
+                  height: { type: integer }
+
+    RobotTelemetry:
+      type: object
+      properties:
+        robotId: { type: string }
+        timestamp: { type: integer, description: "Unix ms" }
+        jointPositions:
+          type: array
+          items: { type: number }
+        jointVelocities:
+          type: array
+          items: { type: number }
+        jointTorques:
+          type: array
+          items: { type: number }
+        endEffectorPose:
+          type: object
+          properties:
+            x: { type: number }
+            y: { type: number }
+            z: { type: number }
+            rx: { type: number }
+            ry: { type: number }
+            rz: { type: number }
+        gripperPosition: { type: number, description: "0–1" }
 
     Dataset:
       type: object
@@ -427,3 +801,89 @@ components:
         limit: { type: integer }
         total: { type: integer }
         totalPages: { type: integer }
+
+    # ── Fleet Schemas ──────────────────────────────────────
+    FleetStatus:
+      type: object
+      properties:
+        totalRobots: { type: integer }
+        activeRobots: { type: integer }
+        namespaces:
+          type: array
+          items: { type: string }
+        ddsGraphHealthy: { type: boolean }
+        robots:
+          type: array
+          items:
+            $ref: '#/components/schemas/FleetRobot'
+
+    FleetRobot:
+      type: object
+      properties:
+        robotId: { type: string }
+        name: { type: string }
+        namespace: { type: string, description: "ROS 2 namespace e.g. /robot/arm1" }
+        embodiment: { type: string }
+        connectionType: { type: string, enum: [ros2, grpc, websocket, usb] }
+        status: { type: string, enum: [connected, disconnected, error, recording] }
+        ros2Status:
+          type: object
+          properties:
+            nodeActive: { type: boolean }
+            controllerState: { type: string, enum: [inactive, active, unconfigured] }
+            ddsConnected: { type: boolean }
+            topicHz:
+              type: object
+              additionalProperties: { type: number }
+            lastHeartbeat: { type: string, format: date-time }
+
+    # ── Recording Schemas ──────────────────────────────────
+    RecordingStartRequest:
+      type: object
+      required: [sessionId]
+      properties:
+        sessionId: { type: string }
+        topicFilters:
+          type: array
+          items: { type: string }
+          description: "ROS 2 topic patterns to record (default: all)"
+        storageFormat: { type: string, enum: [mcap, sqlite3], default: mcap }
+
+    RecordingStatus:
+      type: object
+      properties:
+        id: { type: string }
+        sessionId: { type: string }
+        status: { type: string, enum: [recording, stopped, converting, completed, error] }
+        format: { type: string, enum: [mcap, sqlite3] }
+        filePath: { type: string }
+        fileSizeMb: { type: number }
+        durationSeconds: { type: number }
+        topicsRecorded:
+          type: array
+          items: { type: string }
+        messageCount: { type: integer }
+        startedAt: { type: string, format: date-time }
+        stoppedAt: { type: string, format: date-time }
+
+    # ── Policy Server Schemas ──────────────────────────────
+    PolicyConnectRequest:
+      type: object
+      required: [address, protocol, modelName]
+      properties:
+        address: { type: string, description: "Policy server address (host:port)" }
+        protocol: { type: string, enum: [grpc, zmq] }
+        modelName: { type: string, description: "Model to load (e.g. act, smolvla, pi0)" }
+        robotId: { type: string, description: "Robot to bind policy output to" }
+
+    PolicyStatus:
+      type: object
+      properties:
+        connected: { type: boolean }
+        address: { type: string }
+        protocol: { type: string, enum: [grpc, zmq] }
+        modelName: { type: string }
+        boundRobotId: { type: string }
+        avgLatencyMs: { type: number }
+        inferenceCount: { type: integer }
+        lastInferenceAt: { type: string, format: date-time }

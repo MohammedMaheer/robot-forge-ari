@@ -18,3 +18,7 @@ data:
   MARKETPLACE_SERVICE_URL: "http://marketplace-service.robotforge.svc.cluster.local:3002"
   COLLECTION_SERVICE_URL: "http://collection-service.robotforge.svc.cluster.local:8001"
   PROCESSING_SERVICE_URL: "http://processing-service.robotforge.svc.cluster.local:8002"
+  # ROS 2 / DDS Configuration
+  ROS_DOMAIN_ID: "42"
+  RMW_IMPLEMENTATION: "rmw_zenoh_cpp"
+  ZENOH_ROUTER_URL: "tcp/zenoh.robotforge.svc.cluster.local:7447"

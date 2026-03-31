@@ -205,7 +205,7 @@ export function EpisodeTable({ episodes, onSelect, className }: EpisodeTableProp
           </tbody>
         </table>
 
-        {episodes.length === 0 && (
+        {table.getRowModel().rows.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-text-secondary">No episodes found</div>
         )}
       </div>

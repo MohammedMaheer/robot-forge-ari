@@ -52,19 +52,23 @@ export function TelemetryChart({
 }: TelemetryChartProps) {
   const [data, setData] = useState<TelemetryDataPoint[]>([]);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Stabilise the modalities array as a string so a new array literal from the
+  // parent does not cause unnecessary effect re-runs.
+  const modalitiesKey = modalities.join(',');
 
   // Generate mock telemetry when no external feed is provided
   const generateMockPoint = useCallback(
     (t: number): TelemetryDataPoint => {
+      const mods = modalitiesKey.split(',') as SensorModality[];
       const point: TelemetryDataPoint = { timestamp: t };
-      modalities.forEach((mod, i) => {
+      mods.forEach((mod, i) => {
         const freq = 0.1 + i * 0.05;
         const phase = i * 0.7;
         point[mod] = Math.sin(t * freq + phase) * (1 + i * 0.3) + Math.random() * 0.1;
       });
       return point;
     },
-    [modalities]
+    [modalitiesKey]
   );
 
   useEffect(() => {
@@ -89,7 +93,7 @@ export function TelemetryChart({
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
     };
-  }, [robotId, modalities, windowSeconds, dataFeed, generateMockPoint]);
+  }, [robotId, modalitiesKey, windowSeconds, dataFeed, generateMockPoint]);
 
   return (
     <div className={cn('bg-surface-elevated rounded-lg border border-surface-border p-4', className)}>

@@ -2,13 +2,11 @@ import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import { v4 as uuidv4 } from 'uuid';
-import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
+import { prisma } from '../lib/prisma';
 import type { JwtPayload, UserRole, UserTier, ApiScope, AuthTokens } from '@robotforge/types';
 
-const prisma = new PrismaClient();
 export const authRouter = Router();
 
 // ── Validation Schemas ────────────────────────────────────
@@ -179,7 +177,16 @@ authRouter.post(
 authRouter.post(
   '/refresh',
   asyncHandler(async (req: Request, res: Response) => {
-    const { refreshToken } = req.body;
+    // Accept refresh token from JSON body (password flow) OR HttpOnly cookie (OAuth flow)
+    const cookieHeader = req.headers.cookie ?? '';
+    const cookieToken = cookieHeader
+      .split(';')
+      .find((c) => c.trim().startsWith('refreshToken='))
+      ?.split('=')
+      .slice(1)
+      .join('=')
+      .trim();
+    const refreshToken: string | undefined = req.body.refreshToken ?? cookieToken;
     if (!refreshToken) {
       res.status(400).json({ code: 'MISSING_TOKEN', message: 'Refresh token is required' });
       return;
@@ -303,6 +310,30 @@ authRouter.get(
   })
 );
 
+// ── GET /auth/keys ────────────────────────────────────────
+
+authRouter.get(
+  '/keys',
+  requireAuth(),
+  asyncHandler(async (req: Request, res: Response) => {
+    const keys = await prisma.apiKey.findMany({
+      where: { userId: req.user!.sub },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        prefix: true,
+        scopes: true,
+        rateLimit: true,
+        ipAllowlist: true,
+        expiresAt: true,
+        createdAt: true,
+      },
+    });
+    res.json({ data: keys });
+  })
+);
+
 // ── POST /auth/keys ───────────────────────────────────────
 
 authRouter.post(
@@ -380,5 +411,42 @@ authRouter.delete(
     await prisma.apiKey.delete({ where: { id } });
 
     res.json({ data: { message: 'API key revoked successfully' } });
+  })
+);
+
+// ── PATCH /auth/profile ───────────────────────────────────
+
+const updateProfileSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+});
+
+authRouter.patch(
+  '/profile',
+  requireAuth(),
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = updateProfileSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ code: 'VALIDATION_ERROR', message: 'Invalid input', details: parsed.error.flatten().fieldErrors });
+      return;
+    }
+
+    const user = await prisma.user.update({
+      where: { id: req.user!.sub },
+      data: parsed.data,
+      select: { id: true, email: true, name: true, role: true, tier: true },
+    });
+
+    res.json({ data: user });
+  })
+);
+
+// ── DELETE /auth/account ──────────────────────────────────
+
+authRouter.delete(
+  '/account',
+  requireAuth(),
+  asyncHandler(async (req: Request, res: Response) => {
+    await prisma.user.delete({ where: { id: req.user!.sub } });
+    res.json({ data: { message: 'Account deleted successfully' } });
   })
 );

@@ -12,7 +12,7 @@
   },
   "scripts": {
     "build": "turbo build",
-    "dev": "turbo dev",
+    "dev": "turbo dev --filter=!./apps/desktop --concurrency 15",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "test": "turbo test",

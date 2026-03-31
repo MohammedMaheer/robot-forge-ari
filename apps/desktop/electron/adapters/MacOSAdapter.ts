@@ -3,7 +3,7 @@
  */
 
 import path from 'node:path';
-import { exec } from 'node:child_process';
+import { exec, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { app, shell } from 'electron';
 import type {
@@ -15,6 +15,7 @@ import type {
 } from './PlatformAdapter';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export class MacOSAdapter implements IPlatformAdapter {
   readonly platform = 'darwin' as const;
@@ -90,8 +91,12 @@ export class MacOSAdapter implements IPlatformAdapter {
 
   async getAvailableDiskSpace(targetPath: string): Promise<number> {
     try {
-      const { stdout } = await execAsync(`df -k "${targetPath}" | tail -1 | awk '{print $4}'`);
-      return parseInt(stdout.trim(), 10) * 1024 || 0;
+      // Use execFile to avoid shell injection — df accepts path as a direct argument
+      const { stdout } = await execFileAsync('df', ['-k', targetPath]);
+      const lines = stdout.trim().split('\n');
+      const dataLine = lines[lines.length - 1];
+      const available = parseInt(dataLine.split(/\s+/)[3] ?? '0', 10);
+      return (available || 0) * 1024;
     } catch {
       return 0;
     }

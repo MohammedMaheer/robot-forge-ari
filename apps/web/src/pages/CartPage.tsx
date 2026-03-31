@@ -2,89 +2,24 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
-import type { CartItem, Dataset } from '@robotforge/types';
-
-// ---------------------------------------------------------------------------
-// Fallback cart items (used while API is loading / unavailable)
-// ---------------------------------------------------------------------------
-
-function makeDataset(overrides: Partial<Dataset> & { id: string; name: string }): Dataset {
-  return {
-    description: '',
-    ownerId: 'user-100',
-    task: 'bin_picking',
-    embodiments: ['ur5'],
-    episodeCount: 1000,
-    totalDurationHours: 20,
-    sizeGb: 30,
-    qualityScore: 85,
-    format: 'lerobot_hdf5',
-    pricingTier: 'professional',
-    pricePerEpisode: 5,
-    tags: [],
-    downloads: 500,
-    rating: 4.5,
-    sampleEpisodes: [],
-    accessLevel: 'public',
-    licenseType: 'cc_by',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    ...overrides,
-  };
-}
-
-const FALLBACK_CART: CartItem[] = [
-  {
-    datasetId: 'ds-1',
-    dataset: makeDataset({ id: 'ds-1', name: 'UR5 Bin Picking Pro', episodeCount: 2400, pricePerEpisode: 5 }),
-    addedAt: new Date(),
-  },
-  {
-    datasetId: 'ds-5',
-    dataset: makeDataset({
-      id: 'ds-5',
-      name: 'Unitree H1 Whole-Body Locomotion',
-      task: 'whole_body_loco',
-      embodiments: ['unitree_h1'],
-      episodeCount: 4000,
-      pricePerEpisode: 12,
-      pricingTier: 'enterprise',
-    }),
-    addedAt: new Date(),
-  },
-  {
-    datasetId: 'ds-4',
-    dataset: makeDataset({
-      id: 'ds-4',
-      name: 'xArm6 Packing Dataset',
-      task: 'packing',
-      embodiments: ['xarm6'],
-      episodeCount: 1500,
-      pricePerEpisode: 0,
-      pricingTier: 'free',
-    }),
-    addedAt: new Date(),
-  },
-];
-
-async function fetchCart(): Promise<CartItem[]> {
-  try {
-    const res = await apiClient.get('/marketplace/cart');
-    return res.data.data ?? res.data;
-  } catch {
-    return FALLBACK_CART;
-  }
-}
+import { useNotifications } from '@/contexts/NotificationContext';
+import type { CartItem } from '@robotforge/types';
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
+async function fetchCart(): Promise<CartItem[]> {
+  const res = await apiClient.get('/marketplace/cart');
+  return res.data.data ?? res.data;
+}
+
 export function CartPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { push } = useNotifications();
 
-  const { data: items = FALLBACK_CART } = useQuery<CartItem[]>({
+  const { data: items, isLoading, isError } = useQuery<CartItem[]>({
     queryKey: ['cart'],
     queryFn: fetchCart,
     staleTime: 30_000,
@@ -97,13 +32,44 @@ export function CartPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cart'] });
     },
+    onError: () => {
+      push('error', 'Failed to remove item', 'Please try again.');
+    },
+  });
+
+  const checkoutMutation = useMutation({
+    mutationFn: async () => {
+      // Process all items; collect first Stripe checkoutUrl (paid items)
+      let checkoutUrl: string | null = null;
+      for (const item of (items ?? [])) {
+        const { data } = await apiClient.post(
+          `/marketplace/datasets/${item.datasetId}/purchase`
+        );
+        const url = data?.data?.checkoutUrl;
+        if (url && !checkoutUrl) {
+          checkoutUrl = url;
+          // Don't break — continue to purchase remaining free items in loop
+        }
+      }
+      if (checkoutUrl) {
+        // Redirect to Stripe for first paid item; remaining paid items stay in cart
+        window.location.href = checkoutUrl;
+        return;
+      }
+      // All items were free — clear cart and go to marketplace
+      queryClient.invalidateQueries({ queryKey: ['cart'] });
+      navigate('/marketplace');
+    },
+    onError: () => {
+      push('error', 'Checkout failed', 'Unable to process your order. Please try again.');
+    },
   });
 
   const removeItem = (datasetId: string) => {
     removeMutation.mutate(datasetId);
   };
 
-  const totalCents = items.reduce(
+  const totalCents = (items ?? []).reduce(
     (sum, item) => sum + (item.dataset.pricePerEpisode ?? 0) * item.dataset.episodeCount,
     0
   );
@@ -114,11 +80,17 @@ export function CartPage() {
       <div>
         <h1 className="text-xl font-semibold text-text-primary">Your Cart</h1>
         <p className="text-sm text-text-secondary mt-0.5">
-          {items.length} item{items.length !== 1 ? 's' : ''} in your cart
+          {(items ?? []).length} item{(items ?? []).length !== 1 ? 's' : ''} in your cart
         </p>
       </div>
 
-      {items.length === 0 ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center h-40">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+        </div>
+      ) : isError ? (
+        <div className="text-center py-10 text-red-400">Failed to load data</div>
+      ) : !items?.length ? (
         <div className="bg-surface-elevated border border-surface-border rounded-lg p-12 text-center">
           <p className="text-text-secondary text-sm">Your cart is empty.</p>
           <button
@@ -186,8 +158,12 @@ export function CartPage() {
                 {totalCents === 0 ? 'Free' : `$${(totalCents / 100).toFixed(2)}`}
               </span>
             </div>
-            <button className="w-full py-2.5 bg-accent-green text-white text-sm font-bold rounded-md hover:bg-green-600 transition-colors">
-              Proceed to Checkout
+            <button
+              onClick={() => checkoutMutation.mutate()}
+              disabled={checkoutMutation.isPending}
+              className="w-full py-2.5 bg-accent-green text-white text-sm font-bold rounded-md hover:bg-green-600 disabled:opacity-50 transition-colors"
+            >
+              {checkoutMutation.isPending ? 'Processing…' : 'Proceed to Checkout'}
             </button>
           </div>
         </>

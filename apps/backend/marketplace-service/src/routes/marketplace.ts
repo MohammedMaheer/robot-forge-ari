@@ -1,7 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
 export const marketplaceRouter = Router();
 
 function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<void>) {

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { apiClient } from '@/lib/api';
 import type {
   RobotTask,
   RobotEmbodiment,
@@ -51,19 +52,31 @@ export function CreateDatasetPage() {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock submit — in real app, would call API
-    console.log({
-      name,
-      description,
-      task,
-      embodiments: Array.from(selectedEmbodiments),
-      format,
-      pricingTier,
-      license,
-    });
-    navigate('/datasets');
+    setSubmitError(null);
+    setIsSubmitting(true);
+    try {
+      const { data } = await apiClient.post('/marketplace/datasets', {
+        name,
+        description,
+        task,
+        embodiments: Array.from(selectedEmbodiments),
+        format,
+        pricingTier,
+        licenseType: license,
+      });
+      const created = data.data ?? data;
+      navigate(`/marketplace/${created.id}`);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Failed to create dataset';
+      setSubmitError(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const inputClasses =
@@ -194,6 +207,9 @@ export function CreateDatasetPage() {
 
         {/* Actions */}
         <div className="flex justify-end gap-3 pt-2">
+          {submitError && (
+            <p className="text-sm text-red-400 self-center mr-auto">{submitError}</p>
+          )}
           <button
             type="button"
             onClick={() => navigate(-1)}
@@ -203,9 +219,10 @@ export function CreateDatasetPage() {
           </button>
           <button
             type="submit"
-            className="px-5 py-2.5 bg-accent-green text-white text-sm font-bold rounded-md hover:bg-green-600 transition-colors"
+            disabled={isSubmitting}
+            className="px-5 py-2.5 bg-accent-green text-white text-sm font-bold rounded-md hover:bg-green-600 disabled:opacity-60 transition-colors"
           >
-            Create Dataset
+            {isSubmitting ? 'Creating…' : 'Create Dataset'}
           </button>
         </div>
       </form>

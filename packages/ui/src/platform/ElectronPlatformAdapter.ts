@@ -76,29 +76,26 @@ class ElectronRobotAdapter implements RobotAdapter {
 // ─── Electron Collection ─────────────────────────────────────
 class ElectronCollectionAdapter implements CollectionAdapter {
   async startSession(config: SessionConfig): Promise<CollectionSession> {
+    if (!config.robotIds.length) {
+      throw new Error('At least one robot must be selected to start a session');
+    }
+    const sessionId = crypto.randomUUID();
     await getElectronAPI().daemon.start({
-      sessionId: crypto.randomUUID(),
-      robotId: config.robotId,
+      sessionId,
+      robotId: config.robotIds[0],
       task: config.task,
-      sampleRateHz: config.sampleRateHz,
+      sampleRateHz: 20,
     });
     return {
-      id: crypto.randomUUID(),
-      userId: 'local',
-      mode: 'teleoperation',
-      status: 'active',
-      robotConfig: { embodiment: 'custom' as const, connectionType: 'ros2' as const },
-      sessionConfig: {
-        targetEpisodes: 100,
-        maxEpisodeDuration: 60000,
-        sampleRateHz: config.sampleRateHz,
-        cameras: [],
-      },
-      episodes: [],
-      startedAt: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    } as unknown as CollectionSession;
+      id: sessionId,
+      operatorId: 'local',
+      robots: [],
+      mode: config.mode,
+      status: 'idle',
+      episodeCount: 0,
+      startedAt: new Date(),
+      targetEpisodes: config.targetEpisodes,
+    };
   }
 
   async stopSession(_sessionId: string): Promise<void> {

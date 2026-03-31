@@ -17,7 +17,10 @@ import type {
   CollectionSession,
   RobotTelemetry,
   SyncResult,
+  SessionConfig,
 } from '@robotforge/types';
+
+export type { SessionConfig };
 
 // ─── Storage Adapter ──────────────────────────────────────────
 export interface StorageAdapter {
@@ -85,12 +88,6 @@ export interface CollectionAdapter {
   resumeSession(sessionId: string): Promise<void>;
   startEpisode(sessionId: string): Promise<string>;
   stopEpisode(sessionId: string, episodeId: string): Promise<void>;
-}
-
-export interface SessionConfig {
-  robotId: string;
-  task: string;
-  sampleRateHz: number;
 }
 
 // ─── Notification Adapter ────────────────────────────────────

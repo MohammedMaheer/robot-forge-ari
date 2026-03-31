@@ -29,6 +29,22 @@ spec:
                 name: robotforge-config
             - secretRef:
                 name: robotforge-secrets
+          env:
+            - name: ROS_DOMAIN_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: robotforge-config
+                  key: ROS_DOMAIN_ID
+            - name: RMW_IMPLEMENTATION
+              valueFrom:
+                configMapKeyRef:
+                  name: robotforge-config
+                  key: RMW_IMPLEMENTATION
+            - name: ZENOH_ROUTER_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: robotforge-config
+                  key: ZENOH_ROUTER_URL
           resources:
             requests:
               memory: "256Mi"

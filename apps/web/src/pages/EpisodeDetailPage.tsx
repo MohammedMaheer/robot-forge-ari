@@ -6,46 +6,6 @@ import { apiClient } from '@/lib/api';
 import type { Episode } from '@robotforge/types';
 
 // ---------------------------------------------------------------------------
-// Fallback episode (used when API is unavailable)
-// ---------------------------------------------------------------------------
-
-const FALLBACK_EPISODE: Episode = {
-  id: 'ep-1001',
-  sessionId: 'sess-abc12345',
-  robotId: 'r-1',
-  embodiment: 'ur5',
-  task: 'bin_picking',
-  durationMs: 32400,
-  frameCount: 486,
-  qualityScore: 91,
-  status: 'packaged',
-  sensorModalities: [
-    'rgb_camera',
-    'depth_camera',
-    'wrist_camera',
-    'joint_positions',
-    'joint_velocities',
-    'joint_torques',
-    'end_effector_pose',
-    'gripper_state',
-    'force_torque',
-  ],
-  thumbnailUrl: undefined,
-  metadata: {
-    environment: 'Lab A — Bin Picking Station',
-    lighting: 'bright',
-    objectVariety: 8,
-    successLabel: true,
-    operatorId: 'user-1',
-    aiAssisted: false,
-    compressionRatio: 4.3,
-    rawSizeBytes: 54_000_000,
-    compressedSizeBytes: 12_600_000,
-  },
-  createdAt: new Date('2026-02-25T09:15:00Z'),
-};
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -73,18 +33,26 @@ export function EpisodeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const { data: episode = { ...FALLBACK_EPISODE, id: id ?? FALLBACK_EPISODE.id } } = useQuery<Episode>({
+  const { data: episode, isLoading, isError } = useQuery<Episode>({
     queryKey: ['episode', id],
     queryFn: async () => {
-      try {
-        const { data } = await apiClient.get(`/collection/episodes/${id}`);
-        return data;
-      } catch {
-        return { ...FALLBACK_EPISODE, id: id ?? FALLBACK_EPISODE.id };
-      }
+      const { data } = await apiClient.get(`/collection/episodes/${id}`);
+      return data.data ?? data;
     },
     staleTime: 30_000,
   });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-40">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+      </div>
+    );
+  }
+
+  if (isError || !episode) {
+    return <div className="text-center py-10 text-red-400">Failed to load data</div>;
+  }
 
   const qualityColor =
     episode.qualityScore >= 80

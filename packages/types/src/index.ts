@@ -87,6 +87,8 @@ export type RobotEmbodiment =
   | 'franka_panda'
   | 'xarm6'
   | 'xarm7'
+  | 'so100'
+  | 'so101'
   | 'unitree_h1'
   | 'unitree_g1'
   | 'figure01'
@@ -105,6 +107,7 @@ export type RobotTask =
   | 'surgical'
   | 'manipulation'
   | 'whole_body_loco'
+  | 'leader_follower'
   | 'custom';
 
 export type SensorModality =
@@ -149,7 +152,7 @@ export interface CollectionSession {
 }
 
 export type SessionStatus = 'idle' | 'recording' | 'paused' | 'processing';
-export type SessionMode = 'manual' | 'ai_assisted';
+export type SessionMode = 'manual' | 'ai_assisted' | 'leader_follower';
 
 export interface ConnectedRobot {
   id: string;
@@ -160,6 +163,8 @@ export interface ConnectedRobot {
   status: RobotStatus;
   batteryLevel?: number;
   cameras: CameraStream[];
+  ros2Namespace?: string;
+  ros2Status?: Ros2NodeStatus;
 }
 
 export type RobotConnectionType = 'ros2' | 'grpc' | 'websocket' | 'usb';
@@ -179,6 +184,7 @@ export interface RobotConnectionConfig {
   connectionType: RobotConnectionType;
   ipAddress: string;
   port?: number;
+  ros2Namespace?: string;
 }
 
 export interface SessionConfig {
@@ -216,7 +222,7 @@ export interface Dataset {
   updatedAt: Date;
 }
 
-export type DatasetFormat = 'lerobot_hdf5' | 'open_x_embodiment' | 'robotforge_native';
+export type DatasetFormat = 'lerobot_hdf5' | 'lerobot_v3' | 'open_x_embodiment' | 'robotforge_native';
 export type DatasetPricingTier = 'free' | 'starter' | 'professional' | 'enterprise';
 export type DatasetAccessLevel = 'public' | 'private' | 'organization';
 export type DatasetLicense = 'cc_by' | 'cc_by_nc' | 'proprietary' | 'research_only';
@@ -288,6 +294,7 @@ export interface ProcessingStep {
 }
 
 export type ProcessingStepName =
+  | 'mcap_ingest'
   | 'frame_filtering'
   | 'compression'
   | 'annotation'
@@ -378,4 +385,85 @@ export interface Purchase {
   stripePaymentId: string;
   status: 'pending' | 'completed' | 'refunded';
   createdAt: Date;
+}
+
+// ---------------------------------------------------------------------------
+// ROS 2 Fleet, Recording & Policy
+// ---------------------------------------------------------------------------
+
+export type ControllerState = 'unconfigured' | 'inactive' | 'active' | 'finalized';
+
+export interface Ros2TopicInfo {
+  name: string;
+  messageType: string;
+  hz?: number;
+}
+
+export interface Ros2NodeStatus {
+  nodeActive: boolean;
+  controllerState: ControllerState;
+  ddsConnected: boolean;
+  topics: Ros2TopicInfo[];
+  lastHeartbeat?: Date;
+}
+
+export interface FleetRobot {
+  robotId: string;
+  name: string;
+  namespace: string;
+  embodiment: RobotEmbodiment;
+  connectionType: RobotConnectionType;
+  status: RobotStatus;
+  ros2Status?: Ros2NodeStatus;
+}
+
+export interface FleetStatus {
+  totalRobots: number;
+  activeRobots: number;
+  namespaces: string[];
+  ddsGraphHealthy: boolean;
+  robots: FleetRobot[];
+}
+
+export type RecordingState =
+  | 'recording'
+  | 'stopped'
+  | 'converting'
+  | 'completed'
+  | 'error';
+
+export type StorageFormat = 'mcap' | 'sqlite3';
+
+export interface RosbagRecording {
+  id: string;
+  sessionId: string;
+  status: RecordingState;
+  storageFormat: StorageFormat;
+  filePath?: string;
+  fileSizeMb: number;
+  durationSeconds: number;
+  topicsRecorded: string[];
+  messageCount: number;
+  startedAt?: Date;
+  stoppedAt?: Date;
+}
+
+export type PolicyProtocol = 'grpc' | 'zmq';
+
+export interface PolicyServerConfig {
+  address: string;
+  protocol: PolicyProtocol;
+  modelName: string;
+  robotId?: string;
+}
+
+export interface PolicyServerStatus {
+  connected: boolean;
+  address?: string;
+  protocol?: PolicyProtocol;
+  modelName?: string;
+  boundRobotId?: string;
+  avgLatencyMs: number;
+  inferenceCount: number;
+  lastInferenceAt?: Date;
 }

@@ -74,7 +74,8 @@ export function EpisodesPage() {
     (id: string) => {
       deleteMutation.mutate(id);
     },
-    [deleteMutation],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deleteMutation.mutate],
   );
 
   const filtered = useMemo(() => {

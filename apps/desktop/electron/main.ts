@@ -89,8 +89,10 @@ function createMainWindow(): void {
   mainWindow.on('close', (e) => {
     if (daemon?.isRunning) {
       e.preventDefault();
+      const win = mainWindow;
+      if (!win) return;
       dialog
-        .showMessageBox(mainWindow!, {
+        .showMessageBox(win, {
           type: 'warning',
           buttons: ['Stop & Quit', 'Cancel'],
           defaultId: 1,
@@ -100,7 +102,7 @@ function createMainWindow(): void {
         .then(({ response }) => {
           if (response === 0) {
             daemon?.stop();
-            mainWindow?.destroy();
+            win.destroy();
           }
         });
     }
@@ -116,12 +118,8 @@ function createMainWindow(): void {
 }
 
 // ─── Tray ────────────────────────────────────────────────────
-function createTray(): void {
-  const icon = nativeImage.createEmpty();
-  tray = new Tray(icon);
-  tray.setToolTip('ROBOTFORGE Desktop');
-
-  const contextMenu = Menu.buildFromTemplate([
+function buildTrayMenu(): Electron.Menu {
+  return Menu.buildFromTemplate([
     { label: 'Show Window', click: () => mainWindow?.show() },
     { type: 'separator' },
     {
@@ -132,7 +130,13 @@ function createTray(): void {
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
   ]);
-  tray.setContextMenu(contextMenu);
+}
+
+function createTray(): void {
+  const icon = nativeImage.createEmpty();
+  tray = new Tray(icon);
+  tray.setToolTip('ROBOTFORGE Desktop');
+  tray.setContextMenu(buildTrayMenu());
 }
 
 // ─── Daemon ──────────────────────────────────────────────────
@@ -145,6 +149,8 @@ function initDaemon(): void {
 
   daemon.on('episode-complete', (episode) => {
     mainWindow?.webContents.send('daemon:episode-complete', episode);
+    // Refresh tray menu to reflect idle state
+    if (tray) tray.setContextMenu(buildTrayMenu());
   });
 
   daemon.on('error', (error) => {
@@ -219,8 +225,10 @@ function initAutoUpdater(): void {
   if (!autoUpdater) return;
 
   autoUpdater.on('update-available', (info) => {
+    const win = mainWindow;
+    if (!win) return;
     dialog
-      .showMessageBox(mainWindow!, {
+      .showMessageBox(win, {
         type: 'info',
         buttons: ['Download', 'Later'],
         defaultId: 0,
@@ -233,8 +241,10 @@ function initAutoUpdater(): void {
   });
 
   autoUpdater.on('update-downloaded', () => {
+    const win = mainWindow;
+    if (!win) return;
     dialog
-      .showMessageBox(mainWindow!, {
+      .showMessageBox(win, {
         type: 'info',
         buttons: ['Restart Now', 'Later'],
         defaultId: 0,

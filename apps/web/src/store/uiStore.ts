@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type { AppNotification } from '@robotforge/types';
-import { v4 as uuidv4 } from 'uuid';
 
 interface UiState {
   sidebarOpen: boolean;
@@ -29,7 +28,7 @@ export const useUiStore = create<UiState>()((set) => ({
       notifications: [
         {
           ...notification,
-          id: uuidv4(),
+          id: crypto.randomUUID(),
           timestamp: new Date(),
           read: false,
         },

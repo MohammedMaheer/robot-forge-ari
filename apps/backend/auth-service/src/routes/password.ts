@@ -1,10 +1,9 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
+import { prisma } from '../lib/prisma';
 
-const prisma = new PrismaClient();
 export const passwordRouter = Router();
 
 function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<void>) {
@@ -26,9 +25,23 @@ passwordRouter.post('/forgot-password', asyncHandler(async (req: Request, res: R
   // Always return 200 to prevent email enumeration
   if (user) {
     const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetHash = crypto.createHash('sha256').update(resetToken).digest('hex');
-    // In production: store resetHash + expiry in DB, send email with link containing resetToken
-    console.log(`[auth] Password reset token for ${user.email}: ${resetToken} (hash: ${resetHash})`);
+    const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour TTL
+
+    // Delete any existing (unused) reset tokens for this user
+    await prisma.passwordResetToken.deleteMany({
+      where: { userId: user.id, usedAt: null },
+    });
+
+    // Store the new token hash in the DB
+    await prisma.passwordResetToken.create({
+      data: { userId: user.id, tokenHash, expiresAt },
+    });
+
+    // In production: send email with link containing the raw resetToken
+    // e.g. https://app.robotforge.ai/reset-password?token=<resetToken>
+    // TODO: integrate email service (SendGrid / SES) to deliver the link
+    void resetToken; // used by email service in production
   }
 
   res.json({ data: { message: 'If an account exists with that email, a password reset link has been sent.' } });
@@ -39,10 +52,43 @@ passwordRouter.post('/reset-password', asyncHandler(async (req: Request, res: Re
   const parsed = resetSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ code: 'VALIDATION_ERROR', message: 'Invalid input' }); return; }
 
-  // In production: look up reset token hash in DB, verify not expired
-  // For now, return a placeholder
+  const tokenHash = crypto.createHash('sha256').update(parsed.data.token).digest('hex');
+
+  const record = await prisma.passwordResetToken.findUnique({ where: { tokenHash } });
+
+  if (!record) {
+    res.status(400).json({ code: 'INVALID_TOKEN', message: 'Invalid or expired password reset token' });
+    return;
+  }
+
+  if (record.expiresAt < new Date()) {
+    res.status(400).json({ code: 'TOKEN_EXPIRED', message: 'Password reset token has expired' });
+    return;
+  }
+
+  if (record.usedAt !== null) {
+    res.status(400).json({ code: 'TOKEN_USED', message: 'Password reset token has already been used' });
+    return;
+  }
+
   const passwordHash = await bcrypt.hash(parsed.data.password, 12);
-  console.log(`[auth] Password reset with token: ${parsed.data.token}, new hash: ${passwordHash.slice(0, 10)}...`);
+
+  // Update password and mark token as used in a transaction
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: record.userId },
+      data: { passwordHash },
+    }),
+    prisma.passwordResetToken.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    }),
+    // Revoke all existing refresh tokens to force re-login
+    prisma.refreshToken.updateMany({
+      where: { userId: record.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    }),
+  ]);
 
   res.json({ data: { message: 'Password has been reset successfully. You can now sign in.' } });
 }));

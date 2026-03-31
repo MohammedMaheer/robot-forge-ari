@@ -30,8 +30,8 @@ app.get('/health', (_req, res) => {
 });
 
 // ── Routes ────────────────────────────────────────────────
-app.use('/auth', authRouter);
-app.use('/auth', passwordRouter);
+app.use('/', authRouter);
+app.use('/', passwordRouter);
 app.use('/oauth', oauthRouter);
 
 // ── Error handling ────────────────────────────────────────

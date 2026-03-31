@@ -8,10 +8,13 @@
 import type { IpcMain } from 'electron';
 import Database from 'better-sqlite3';
 import path from 'node:path';
+import fs from 'node:fs';
 import { app } from 'electron';
 import { storageFilterSchema, storageEpisodeIdSchema, validateIpc } from './schemas';
 
 let db: Database.Database | null = null;
+
+app.on('before-quit', () => { if (db) db.close(); });
 
 function getDb(): Database.Database {
   if (!db) {
@@ -99,8 +102,12 @@ export function registerStorageIpc(ipcMain: IpcMain): void {
   ipcMain.handle('storage:delete-episode', async (_event, rawId: unknown) => {
     const id = validateIpc(storageEpisodeIdSchema, rawId, 'storage:delete-episode');
     const database = getDb();
+    const episode = database.prepare('SELECT hdf5_path FROM episodes WHERE id = ?').get(id) as { hdf5_path: string } | undefined;
     database.prepare('DELETE FROM sync_queue WHERE episode_id = ?').run(id);
     database.prepare('DELETE FROM episodes WHERE id = ?').run(id);
+    if (episode?.hdf5_path) {
+      try { fs.unlinkSync(episode.hdf5_path); } catch { /* file may not exist */ }
+    }
   });
 
   /**
@@ -144,11 +151,7 @@ export function registerStorageIpc(ipcMain: IpcMain): void {
       }
     }
 
-    const remaining = database
-      .prepare("SELECT COUNT(*) as count FROM sync_queue WHERE status IN ('pending', 'failed')")
-      .get() as { count: number };
-
-    return { synced, failed, remaining: remaining.count };
+    return { syncedCount: synced, failedCount: failed, errors: [] };
   });
 
   /**

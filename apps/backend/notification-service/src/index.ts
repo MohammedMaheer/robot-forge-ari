@@ -17,7 +17,7 @@ const PORT = parseInt(process.env.PORT || "3003", 10);
 const JWT_SECRET = process.env.JWT_SECRET || "robotforge-dev-secret";
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const CORS_ORIGINS = (
-  process.env.CORS_ORIGINS || "http://localhost:5173,http://localhost:5174"
+  process.env.CORS_ORIGIN || "http://localhost:5173,http://localhost:5174"
 ).split(",");
 
 // ---------------------------------------------------------------------------
@@ -223,14 +223,9 @@ setupNamespace(processingNsp, "processing", (socket) => {
 
 const marketplaceNsp = io.of("/marketplace");
 setupNamespace(marketplaceNsp, "marketplace", (socket) => {
-  socket.on("dataset:new", (data: unknown) => {
-    // Broadcast to ALL connected marketplace subscribers
-    marketplaceNsp.emit("dataset:new", data);
-  });
-
-  socket.on("dataset:updated", (data: unknown) => {
-    marketplaceNsp.emit("dataset:updated", data);
-  });
+  // Clients may only receive purchase confirmations for themselves.
+  // dataset:new / dataset:updated are server-initiated via the /notify REST
+  // endpoint — clients cannot broadcast these to prevent fake event injection.
 
   socket.on("purchase:confirmed", (data: unknown) => {
     const userId = getUserId(socket);
@@ -251,6 +246,20 @@ const NotifyBodySchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Internal service-to-service auth middleware
+// ---------------------------------------------------------------------------
+
+function requireInternalAuth(req: Request, res: Response, next: NextFunction) {
+  const secret = req.headers['x-internal-secret'];
+  const expected = process.env.INTERNAL_SECRET;
+  if (!expected || secret !== expected) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  next();
+}
+
+// ---------------------------------------------------------------------------
 // REST endpoints
 // ---------------------------------------------------------------------------
 
@@ -263,7 +272,7 @@ app.get("/health", (_req: Request, res: Response) => {
  * Body: { userId?: string, channel: string, event: string, data: any }
  * If userId is provided, emits to that user's room; otherwise broadcasts.
  */
-app.post("/notify", (req: Request, res: Response, next: NextFunction) => {
+app.post("/notify", requireInternalAuth, (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsed = NotifyBodySchema.parse(req.body);
     const { userId, channel, event, data } = parsed;
@@ -300,22 +309,26 @@ app.post("/notify", (req: Request, res: Response, next: NextFunction) => {
 /**
  * GET /connections — active socket connection counts per namespace.
  */
-app.get("/connections", async (_req: Request, res: Response) => {
-  const namespaces: Record<string, number> = {};
+app.get("/connections", requireInternalAuth, async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const namespaces: Record<string, number> = {};
 
-  const entries: [string, Namespace][] = [
-    ["teleoperation", teleoperationNsp],
-    ["collection", collectionNsp],
-    ["processing", processingNsp],
-    ["marketplace", marketplaceNsp],
-  ];
+    const entries: [string, Namespace][] = [
+      ["teleoperation", teleoperationNsp],
+      ["collection", collectionNsp],
+      ["processing", processingNsp],
+      ["marketplace", marketplaceNsp],
+    ];
 
-  for (const [name, nsp] of entries) {
-    const sockets = await nsp.fetchSockets();
-    namespaces[name] = sockets.length;
+    for (const [name, nsp] of entries) {
+      const sockets = await nsp.fetchSockets();
+      namespaces[name] = sockets.length;
+    }
+
+    res.json({ namespaces, total: Object.values(namespaces).reduce((a, b) => a + b, 0) });
+  } catch (err) {
+    next(err);
   }
-
-  res.json({ namespaces, total: Object.values(namespaces).reduce((a, b) => a + b, 0) });
 });
 
 // ---------------------------------------------------------------------------

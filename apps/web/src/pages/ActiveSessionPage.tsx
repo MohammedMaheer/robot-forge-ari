@@ -6,59 +6,6 @@ import { apiClient } from '@/lib/api';
 import type { CollectionSession, Episode } from '@robotforge/types';
 
 // ---------------------------------------------------------------------------
-// Fallback session data (used when API is unavailable)
-// ---------------------------------------------------------------------------
-
-const FALLBACK_SESSION: CollectionSession = {
-  id: 'sess-abc12345',
-  operatorId: 'user-1',
-  robots: [
-    {
-      id: 'r-1',
-      name: 'UR5 Workstation A',
-      embodiment: 'ur5',
-      connectionType: 'ros2',
-      ipAddress: '192.168.1.10',
-      status: 'recording',
-      cameras: [
-        { id: 'c1', name: 'overview', resolution: { width: 1280, height: 720 }, fps: 30 },
-        { id: 'c2', name: 'wrist', resolution: { width: 640, height: 480 }, fps: 30 },
-      ],
-    },
-  ],
-  status: 'recording',
-  mode: 'manual',
-  episodeCount: 12,
-  startedAt: new Date(Date.now() - 45 * 60 * 1000),
-  targetEpisodes: 50,
-};
-
-const FALLBACK_EPISODES: Episode[] = Array.from({ length: 12 }, (_, i) => ({
-  id: `ep-${i + 1}`,
-  sessionId: 'sess-abc12345',
-  robotId: 'r-1',
-  embodiment: 'ur5' as const,
-  task: 'bin_picking' as const,
-  durationMs: 15000 + Math.floor(Math.random() * 20000),
-  frameCount: 300 + Math.floor(Math.random() * 200),
-  qualityScore: 70 + Math.floor(Math.random() * 30),
-  status: i < 10 ? 'packaged' as const : 'processing' as const,
-  sensorModalities: ['rgb_camera', 'joint_positions', 'end_effector_pose'],
-  metadata: {
-    environment: 'lab',
-    lighting: 'bright',
-    objectVariety: 5,
-    successLabel: i % 3 !== 0 ? true : null,
-    operatorId: 'user-1',
-    aiAssisted: false,
-    compressionRatio: 4.2,
-    rawSizeBytes: 52_000_000,
-    compressedSizeBytes: 12_400_000,
-  },
-  createdAt: new Date(Date.now() - (12 - i) * 3 * 60 * 1000),
-}));
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -67,59 +14,41 @@ export function ActiveSessionPage() {
   const navigate = useNavigate();
 
   // ── Fetch session from API ──────────────────────────────────
-  const { data: fetchedSession } = useQuery<CollectionSession>({
+  const { data: session, isLoading: sessionLoading, isError: sessionError } = useQuery<CollectionSession>({
     queryKey: ['session', sessionId],
     queryFn: async () => {
-      try {
-        const { data } = await apiClient.get(`/collection/sessions/${sessionId}`);
-        return data;
-      } catch {
-        return FALLBACK_SESSION;
-      }
+      const { data } = await apiClient.get(`/collection/sessions/${sessionId}`);
+      return data.data ?? data;
     },
     refetchInterval: 5_000,
     staleTime: 3_000,
   });
 
   // ── Fetch episodes for this session ─────────────────────────
-  const { data: fetchedEpisodes = FALLBACK_EPISODES } = useQuery<Episode[]>({
+  const { data: episodes = [] } = useQuery<Episode[]>({
     queryKey: ['session', sessionId, 'episodes'],
     queryFn: async () => {
-      try {
-        const { data } = await apiClient.get(`/collection/sessions/${sessionId}/episodes`);
-        return data.data ?? data;
-      } catch {
-        return FALLBACK_EPISODES;
-      }
+      const { data } = await apiClient.get(`/collection/episodes`, { params: { session_id: sessionId } });
+      return data.data ?? data;
     },
     refetchInterval: 5_000,
     staleTime: 3_000,
   });
-
-  const [session, setSession] = useState<CollectionSession>(FALLBACK_SESSION);
-  const [episodes, setEpisodes] = useState<Episode[]>(FALLBACK_EPISODES);
-
-  useEffect(() => {
-    if (fetchedSession) setSession(fetchedSession);
-  }, [fetchedSession]);
-
-  useEffect(() => {
-    if (fetchedEpisodes.length > 0) setEpisodes(fetchedEpisodes);
-  }, [fetchedEpisodes]);
 
   // Timer
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    const start = session.startedAt.getTime();
+    if (!session?.startedAt) return;
+    const start = new Date(session.startedAt).getTime();
     timerRef.current = setInterval(() => {
       setElapsed(Date.now() - start);
     }, 1000);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [session.startedAt]);
+  }, [session?.startedAt]);
 
   const formatElapsed = (ms: number) => {
     const totalSec = Math.floor(ms / 1000);
@@ -134,13 +63,42 @@ export function ActiveSessionPage() {
       ? Math.round(episodes.reduce((sum, e) => sum + e.qualityScore, 0) / episodes.length)
       : 0;
 
-  const handleStartRecording = () => {
-    setSession((prev) => ({ ...prev, status: 'recording' }));
+  const handleStartRecording = async () => {
+    try {
+      await apiClient.post(`/collection/sessions/${sessionId}/start`);
+    } catch {
+      // best-effort
+    }
   };
 
-  const handleStopRecording = () => {
-    setSession((prev) => ({ ...prev, status: 'paused' }));
+  const handleStopRecording = async () => {
+    try {
+      await apiClient.post(`/collection/sessions/${sessionId}/pause`);
+    } catch {
+      // best-effort
+    }
   };
+
+  const handleEndSession = async () => {
+    try {
+      await apiClient.post(`/collection/sessions/${sessionId}/stop`);
+    } catch {
+      // best-effort
+    }
+    navigate('/collect');
+  };
+
+  if (sessionLoading) {
+    return (
+      <div className="flex items-center justify-center h-40">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+      </div>
+    );
+  }
+
+  if (sessionError || !session) {
+    return <div className="text-center py-10 text-red-400">Failed to load data</div>;
+  }
 
   return (
     <div className="h-full flex flex-col animate-fade-in">
@@ -180,7 +138,7 @@ export function ActiveSessionPage() {
             </p>
           </div>
           <button
-            onClick={() => navigate('/collect')}
+            onClick={handleEndSession}
             className="px-3 py-1.5 bg-red-500/20 text-red-400 text-xs font-medium rounded-md border border-red-500/30 hover:bg-red-500/30 transition-colors"
           >
             End Session
@@ -207,10 +165,14 @@ export function ActiveSessionPage() {
             <p className="text-xs text-text-secondary mt-0.5">{episodes.length} episodes this session</p>
           </div>
           <div className="flex-1 overflow-auto p-2">
-            <EpisodeTable
-              episodes={episodes}
-              onSelect={(id) => navigate(`/episodes/${id}`)}
-            />
+            {episodes.length === 0 ? (
+              <div className="text-center py-10 text-gray-400">No episodes yet</div>
+            ) : (
+              <EpisodeTable
+                episodes={episodes}
+                onSelect={(id) => navigate(`/episodes/${id}`)}
+              />
+            )}
           </div>
         </div>
       </div>

@@ -45,7 +45,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export function EpisodeDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const { episodeId: id } = useParams<{ episodeId: string }>();
   const navigate = useNavigate();
 
   const { data: episode, isLoading } = useQuery<LocalEpisode | null>({

@@ -12,10 +12,17 @@ interface SearchResult {
 
 export function GlobalSearch() {
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+
+  // Debounce query by 300 ms to avoid an API call on every keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   // Keyboard shortcut: Ctrl+K / Cmd+K
   useEffect(() => {
@@ -43,11 +50,11 @@ export function GlobalSearch() {
   }, []);
 
   const { data: results } = useQuery({
-    queryKey: ['global-search', query],
+    queryKey: ['global-search', debouncedQuery],
     queryFn: async (): Promise<SearchResult[]> => {
-      if (query.length < 2) return [];
+      if (debouncedQuery.length < 2) return [];
       try {
-        const { data } = await apiClient.get('/marketplace/datasets', { params: { q: query, limit: 8 } });
+        const { data } = await apiClient.get('/marketplace/datasets', { params: { q: debouncedQuery, limit: 8 } });
         return (data.data ?? []).map((d: Record<string, string>) => ({
           id: d.id,
           type: 'dataset' as const,
@@ -58,7 +65,7 @@ export function GlobalSearch() {
         return [];
       }
     },
-    enabled: query.length >= 2,
+    enabled: debouncedQuery.length >= 2,
     staleTime: 10_000,
   });
 
@@ -119,13 +126,13 @@ export function GlobalSearch() {
             </ul>
           )}
 
-          {query.length >= 2 && (!results || results.length === 0) && (
+          {debouncedQuery.length >= 2 && (!results || results.length === 0) && (
             <div className="p-6 text-center text-sm text-text-secondary">
               No results found for "{query}"
             </div>
           )}
 
-          {query.length < 2 && (
+          {debouncedQuery.length < 2 && (
             <div className="p-4 text-center text-xs text-text-secondary">
               Type at least 2 characters to search
             </div>

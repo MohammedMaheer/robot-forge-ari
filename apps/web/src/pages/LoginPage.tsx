@@ -1,8 +1,10 @@
-import { useNavigate, Link } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuthStore } from '@/store/authStore';
+import { apiClient } from '@/lib/api';
 
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email'),
@@ -11,11 +13,39 @@ const loginSchema = z.object({
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
-const OAUTH_BASE = import.meta.env.VITE_API_URL ?? '';
+// Strip /api suffix from VITE_API_URL to get just the gateway origin for OAuth redirects
+const OAUTH_BASE = (() => {
+  const url = import.meta.env.VITE_API_URL ?? '';
+  return url.endsWith('/api') ? url.slice(0, -4) : url;
+})();
 
 export function LoginPage() {
-  const { login, isLoading } = useAuthStore();
+  const { login, isLoading, setTokens, setUser } = useAuthStore();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const exchangedRef = useRef(false);
+
+  // Handle OAuth redirect: backend sends users to /login?code=<code>
+  // after GitHub/Google authentication. Exchange the code for tokens here.
+  // Guard with a ref to prevent React 18 StrictMode double-invocation.
+  useEffect(() => {
+    const code = searchParams.get('code');
+    if (!code || exchangedRef.current) return;
+    exchangedRef.current = true;
+
+    apiClient
+      .post('/auth/oauth/exchange', { code })
+      .then(({ data }) => {
+        setTokens(data.data.tokens);
+        setUser(data.data.user);
+        navigate('/dashboard', { replace: true });
+      })
+      .catch(() => {
+        // Remove the code param so the error banner is shown cleanly
+        navigate('/login', { replace: true });
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const {
     register,

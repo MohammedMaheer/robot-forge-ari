@@ -15,9 +15,18 @@ class DatasetFormat(str, Enum):
     hdf5 = "hdf5"
     rlds = "rlds"
     lerobot = "lerobot"
+    lerobot_v3 = "lerobot_v3"
     huggingface = "huggingface"
     parquet = "parquet"
     raw = "raw"
+
+
+class InputSource(str, Enum):
+    """Supported input sources for packaging."""
+
+    episodes = "episodes"
+    mcap = "mcap"
+    rosbag2_sqlite3 = "rosbag2_sqlite3"
 
 
 class ExportRequest(BaseModel):
@@ -25,6 +34,13 @@ class ExportRequest(BaseModel):
 
     dataset_id: str = Field(..., description="ID of the source dataset / collection")
     format: DatasetFormat = Field(..., description="Target output format")
+    input_source: InputSource = Field(
+        default=InputSource.episodes,
+        description="Where the raw data comes from (episodes, MCAP rosbag, etc.)",
+    )
+    mcap_path: Optional[str] = Field(
+        None, description="Path to MCAP file when input_source is mcap",
+    )
     episode_ids: list[str] = Field(
         default_factory=list,
         description="Specific episode IDs to include (empty = all)",
@@ -59,5 +75,5 @@ class FormatInfo(BaseModel):
     description: str
     supported_features: list[str] = Field(default_factory=list)
     typical_compression_ratio: float = Field(
-        ..., ge=0.0, le=1.0, description="Approximate ratio (compressed / raw)"
+        default=0.5, ge=0.0, le=1.0, description="Approximate ratio (compressed / raw)"
     )

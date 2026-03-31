@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
+from deps import CurrentUser
 from models import ExportRequest, ExportResponse
 
 router = APIRouter()
@@ -19,8 +20,8 @@ router = APIRouter()
 _exports: dict[str, ExportResponse] = {}
 
 
-@router.post("/", response_model=ExportResponse, status_code=201)
-async def create_export(body: ExportRequest) -> ExportResponse:
+@router.post("/", response_model=dict, status_code=201)
+async def create_export(body: ExportRequest, _: CurrentUser) -> dict:
     """Create a new export job.
 
     In production this would enqueue a background task.  Here we simulate
@@ -43,20 +44,20 @@ async def create_export(body: ExportRequest) -> ExportResponse:
         created_at=now,
     )
     _exports[export_id] = export
-    return export
+    return {"data": export.model_dump()}
 
 
-@router.get("/{export_id}", response_model=ExportResponse)
-async def get_export(export_id: str) -> ExportResponse:
+@router.get("/{export_id}", response_model=dict)
+async def get_export(export_id: str, _: CurrentUser) -> dict:
     """Retrieve the status of an export job."""
     export = _exports.get(export_id)
     if export is None:
         raise HTTPException(status_code=404, detail="Export not found")
-    return export
+    return {"data": export.model_dump()}
 
 
 @router.get("/{export_id}/download")
-async def download_export(export_id: str) -> dict[str, str]:
+async def download_export(export_id: str, _: CurrentUser) -> dict:
     """Generate a presigned download URL (mock).
 
     Returns a fake S3 presigned URL that expires in 1 hour.
@@ -82,4 +83,4 @@ async def download_export(export_id: str) -> dict[str, str]:
     # Persist the URL on the export record
     export.download_url = presigned_url
 
-    return {"download_url": presigned_url, "expires_in_seconds": 3600}
+    return {"data": {"download_url": presigned_url, "expires_in_seconds": 3600}}

@@ -62,11 +62,11 @@ interface RobotConnectionConfig { host: string; port: number; protocol: string; 
 interface ConnectedRobotInfo { id: string; name: string; connected: boolean }
 interface RobotCommand { type: string; payload: Record<string, unknown> }
 interface RobotStatusInfo { id: string; connected: boolean; batteryLevel: number; temperature: number }
-interface TelemetryData { robotId: string; timestamp: number; jointPositions: number[]; jointVelocities: number[]; endEffectorPose: number[] }
+interface TelemetryData { robotId: string; timestamp: number; jointPositions: number[]; jointVelocities: number[]; endEffectorPose: { x: number; y: number; z: number; rx: number; ry: number; rz: number } }
 interface EpisodeFilter { sessionId?: string; status?: string; task?: string }
 interface LocalEpisode { id: string; sessionId: string; task: string; status: string; durationMs: number; createdAt: string; syncedAt?: string }
 interface SyncQueueItem { episodeId: string; status: string; retries: number }
-interface SyncResult { synced: number; failed: number; remaining: number }
+interface SyncResult { syncedCount: number; failedCount: number; errors: string[] }
 interface StorageStats { totalEpisodes: number; pendingSync: number; diskUsageMb: number }
 interface DaemonConfig { sessionId: string; robotId: string; task: string; sampleRateHz: number }
 interface DaemonStatus { running: boolean; paused: boolean; currentEpisodeId?: string; episodesRecorded: number; uptimeMs: number }
@@ -87,7 +87,7 @@ const electronAPI: ElectronAPI = {
     disconnect: (robotId) => ipcRenderer.invoke('robots:disconnect', robotId),
     sendCommand: (robotId, command) => ipcRenderer.invoke('robots:send-command', robotId, command),
     getStatus: (robotId) => ipcRenderer.invoke('robots:get-status', robotId),
-    onTelemetry: (callback) => createListener('robots:telemetry', callback as (...a: unknown[]) => void),
+    onTelemetry: (callback) => createListener('daemon:telemetry', callback as (...a: unknown[]) => void),
   },
 
   storage: {

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api';
+import { useNotifications } from '@/contexts/NotificationContext';
 import type { ApiKey, ApiScope } from '@robotforge/types';
 
 // ---------------------------------------------------------------------------
@@ -15,58 +16,19 @@ const ALL_SCOPES: ApiScope[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Fallback data (used while API is loading / unavailable)
-// ---------------------------------------------------------------------------
-
-const FALLBACK_KEYS: ApiKey[] = [
-  {
-    id: 'key-1',
-    name: 'Production Ingest',
-    prefix: 'rf_prod_',
-    scopes: ['write:episodes', 'stream:teleoperation'],
-    rateLimit: 1000,
-    ipAllowlist: [],
-    lastUsedAt: new Date('2026-02-24T18:30:00Z'),
-    expiresAt: new Date('2027-02-24'),
-  },
-  {
-    id: 'key-2',
-    name: 'Read-Only Dashboard',
-    prefix: 'rf_dash_',
-    scopes: ['read:datasets'],
-    rateLimit: 500,
-    ipAllowlist: [],
-    lastUsedAt: new Date('2026-02-25T10:00:00Z'),
-  },
-  {
-    id: 'key-3',
-    name: 'CI Pipeline',
-    prefix: 'rf_ci__',
-    scopes: ['read:datasets', 'write:episodes'],
-    rateLimit: 2000,
-    ipAllowlist: [],
-    lastUsedAt: undefined,
-    expiresAt: new Date('2026-06-01'),
-  },
-];
-
-async function fetchApiKeys(): Promise<ApiKey[]> {
-  try {
-    const res = await apiClient.get('/auth/api-keys');
-    return res.data.data ?? res.data;
-  } catch {
-    return FALLBACK_KEYS;
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
+async function fetchApiKeys(): Promise<ApiKey[]> {
+  const res = await apiClient.get('/auth/keys');
+  return res.data.data ?? res.data;
+}
+
 export function ApiKeysPage() {
   const queryClient = useQueryClient();
+  const { push } = useNotifications();
 
-  const { data: keys = FALLBACK_KEYS } = useQuery<ApiKey[]>({
+  const { data: keys, isLoading, isError } = useQuery<ApiKey[]>({
     queryKey: ['api-keys'],
     queryFn: fetchApiKeys,
     staleTime: 30_000,
@@ -74,20 +36,26 @@ export function ApiKeysPage() {
 
   const createMutation = useMutation({
     mutationFn: async (payload: { name: string; scopes: ApiScope[]; rateLimit: number }) => {
-      const res = await apiClient.post('/auth/api-keys', payload);
+      const res = await apiClient.post('/auth/keys', payload);
       return res.data.data ?? res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['api-keys'] });
     },
+    onError: () => {
+      push('error', 'Failed to create API key', 'Please check your input and try again.');
+    },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiClient.delete(`/auth/api-keys/${id}`);
+      await apiClient.delete(`/auth/keys/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['api-keys'] });
+    },
+    onError: () => {
+      push('error', 'Failed to delete API key', 'Please try again.');
     },
   });
 
@@ -220,7 +188,13 @@ export function ApiKeysPage() {
 
       {/* Key list */}
       <div className="space-y-3">
-        {keys.length === 0 ? (
+        {isLoading ? (
+          <div className="flex items-center justify-center h-40">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+          </div>
+        ) : isError ? (
+          <div className="text-center py-10 text-red-400">Failed to load data</div>
+        ) : !keys?.length ? (
           <div className="bg-surface-elevated border border-surface-border rounded-lg p-12 text-center">
             <p className="text-text-secondary text-sm">No API keys yet.</p>
           </div>

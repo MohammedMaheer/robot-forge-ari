@@ -16,7 +16,10 @@ const registerSchema = z.object({
 
 type RegisterFormData = z.infer<typeof registerSchema>;
 
-const OAUTH_BASE = import.meta.env.VITE_API_URL ?? '';
+const OAUTH_BASE = (() => {
+  const url = import.meta.env.VITE_API_URL ?? '';
+  return url.endsWith('/api') ? url.slice(0, -4) : url;
+})();
 
 export function RegisterPage() {
   const { register: registerUser, isLoading } = useAuthStore();

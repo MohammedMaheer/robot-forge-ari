@@ -6,7 +6,7 @@ interface RobotTelemetry {
   robotId: string;
   jointPositions: number[];
   endEffectorPose: { x: number; y: number; z: number; rx: number; ry: number; rz: number };
-  gripperState: number;
+  gripperPosition: number;
   batteryLevel: number;
   temperature: number;
   timestamp: number;
@@ -34,12 +34,10 @@ export function useTelemetry(robotId: string | null) {
 
       const point: TelemetryDataPoint = {
         timestamp: telemetry.timestamp,
-        values: {
-          ...Object.fromEntries(telemetry.jointPositions.map((v, i) => [`j${i}`, v])),
-          gripper: telemetry.gripperState,
-          battery: telemetry.batteryLevel,
-          temp: telemetry.temperature,
-        },
+        ...Object.fromEntries(telemetry.jointPositions.map((v, i) => [`j${i}`, v])),
+        gripper: telemetry.gripperPosition,
+        battery: telemetry.batteryLevel,
+        temp: telemetry.temperature,
       };
 
       historyRef.current = [...historyRef.current.slice(-MAX_HISTORY + 1), point];

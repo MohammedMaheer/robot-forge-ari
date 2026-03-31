@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import type { Episode, RobotTelemetry } from '@robotforge/types';
+import type { Episode } from '@robotforge/types';
 import { RobotViewer } from './RobotViewer';
 import { cn } from '../utils/cn';
 
@@ -34,6 +34,9 @@ export function EpisodePlayer({ episode, autoPlay = false, className }: EpisodeP
   // Animation loop
   const animationRef = React.useRef<number | null>(null);
   const lastFrameRef = React.useRef<number>(0);
+  // Track current playback time in a ref so we can check it synchronously
+  // inside the rAF callback without going through async React state.
+  const currentTimeRef = React.useRef(0);
 
   const animate = useCallback(
     (timestamp: number) => {
@@ -41,15 +44,16 @@ export function EpisodePlayer({ episode, autoPlay = false, className }: EpisodeP
       const delta = (timestamp - lastFrameRef.current) * speed;
       lastFrameRef.current = timestamp;
 
-      setCurrentTimeMs((prev) => {
-        const next = prev + delta;
-        if (next >= episode.durationMs) {
-          setIsPlaying(false);
-          return episode.durationMs;
-        }
-        return next;
-      });
+      const next = currentTimeRef.current + delta;
+      if (next >= episode.durationMs) {
+        currentTimeRef.current = episode.durationMs;
+        setCurrentTimeMs(episode.durationMs);
+        setIsPlaying(false);
+        return; // end reached — do NOT schedule next frame
+      }
 
+      currentTimeRef.current = next;
+      setCurrentTimeMs(next);
       animationRef.current = requestAnimationFrame(animate);
     },
     [speed, episode.durationMs]
@@ -92,6 +96,7 @@ export function EpisodePlayer({ episode, autoPlay = false, className }: EpisodeP
 
   const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = Number(e.target.value);
+    currentTimeRef.current = value;
     setCurrentTimeMs(value);
   };
 

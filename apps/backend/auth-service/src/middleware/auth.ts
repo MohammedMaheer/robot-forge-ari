@@ -4,9 +4,10 @@ import type { JwtPayload, UserRole } from '@robotforge/types';
 
 declare global {
   namespace Express {
-    interface Request {
-      user?: JwtPayload;
-    }
+    // Augment Passport's Express.User so req.user carries the JWT payload shape.
+    // Passport declares `user?: User` on Request; by extending User with JwtPayload
+    // fields, all route handlers get the correct type without conflicting declarations.
+    interface User extends JwtPayload {}
   }
 }
 

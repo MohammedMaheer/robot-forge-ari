@@ -44,14 +44,15 @@ interface WebSocketProviderProps {
 export function WebSocketProvider({ children, url, autoConnect = true }: WebSocketProviderProps) {
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
-  const { token } = useAuthStore();
+  const [socketInstance, setSocketInstance] = useState<Socket | null>(null);
+  const { accessToken } = useAuthStore();
 
   useEffect(() => {
     if (!autoConnect) return;
 
     const serverUrl = url ?? import.meta.env.VITE_WS_URL ?? window.location.origin;
     const socket = io(serverUrl, {
-      auth: token ? { token } : undefined,
+      auth: accessToken ? { token: accessToken } : undefined,
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 10,
@@ -62,13 +63,15 @@ export function WebSocketProvider({ children, url, autoConnect = true }: WebSock
     socket.on('disconnect', () => setConnected(false));
 
     socketRef.current = socket;
+    setSocketInstance(socket);
 
     return () => {
       socket.disconnect();
       socketRef.current = null;
+      setSocketInstance(null);
       setConnected(false);
     };
-  }, [url, token, autoConnect]);
+  }, [url, accessToken, autoConnect]);
 
   const subscribe = React.useCallback(
     <T = unknown,>(event: string, handler: (data: T) => void) => {
@@ -87,7 +90,7 @@ export function WebSocketProvider({ children, url, autoConnect = true }: WebSock
   }, []);
 
   const value: WebSocketContextValue = {
-    socket: socketRef.current,
+    socket: socketInstance,
     connected,
     subscribe,
     emit,

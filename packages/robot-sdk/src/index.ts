@@ -25,6 +25,11 @@ export interface TelemetryFrame {
   jointVelocities: number[];
   endEffectorPose: { x: number; y: number; z: number; rx: number; ry: number; rz: number };
   gripperPosition: number;
+  ros2?: {
+    bridgeActive: boolean;
+    controllerState: string;
+    namespace?: string;
+  };
 }
 
 export interface RobotCommand {
@@ -171,8 +176,9 @@ export class WebSocketRobotDriver implements RobotDriver {
     timeoutMs = ROBOT_TIMEOUT_MS,
   ) {
     const port = config.port ?? 9090;
-    this.url = `ws://${config.ipAddress}:${port}`;
-    this.robotId = config.name;
+    const protocol = (config as any).secure !== false && process.env.NODE_ENV === 'production' ? 'wss' : 'ws';
+    this.url = `${protocol}://${config.ipAddress}:${port}`;
+    this.robotId = config.name ?? `robot-${config.ipAddress}`;
     this.timeoutMs = timeoutMs;
     this.sampleRateHz = sampleRateHz;
   }
@@ -259,14 +265,145 @@ export class WebSocketRobotDriver implements RobotDriver {
 }
 
 // ---------------------------------------------------------------------------
+// ROS2RobotDriver — connects via collection-service bridge WebSocket
+// ---------------------------------------------------------------------------
+
+/**
+ * Connects to a ROS 2 robot through the collection-service's WebSocket bridge.
+ * The bridge runs rclpy server-side and relays /joint_states, /controller_state,
+ * and camera topics as JSON frames over `ws://<gateway>/ws/session/<sessionId>`.
+ *
+ * This driver also exposes fleet-level and recording endpoints via HTTP helpers.
+ */
+export class ROS2RobotDriver implements RobotDriver {
+  status: RobotDriverStatus = 'disconnected';
+
+  private ws: WebSocket | null = null;
+  private startTime = 0;
+  private lastFrame: TelemetryFrame | null = null;
+  private listeners = new Set<(frame: TelemetryFrame) => void>();
+  private readonly gatewayUrl: string;
+  private readonly sessionId: string;
+  private readonly token: string;
+  private readonly robotId: string;
+  private readonly ros2Namespace: string;
+  private readonly timeoutMs: number;
+  private readonly sampleRateHz: number;
+
+  constructor(
+    config: RobotConnectionConfig & { sessionId: string; token: string; ros2Namespace?: string },
+    sampleRateHz = DEFAULT_SAMPLE_RATE_HZ,
+    timeoutMs = ROBOT_TIMEOUT_MS,
+  ) {
+    const port = config.port ?? 3000;
+    const protocol = (config as any).secure ? 'wss' : 'ws';
+    this.gatewayUrl = `${protocol}://${config.ipAddress}:${port}`;
+    this.sessionId = config.sessionId;
+    this.token = config.token;
+    this.robotId = config.name ?? `ros2-${config.ipAddress}`;
+    this.ros2Namespace = config.ros2Namespace ?? '';
+    this.timeoutMs = timeoutMs;
+    this.sampleRateHz = sampleRateHz;
+  }
+
+  async connect(): Promise<void> {
+    if (typeof WebSocket === 'undefined') {
+      throw new Error('WebSocket is not available in this environment');
+    }
+
+    this.status = 'connecting';
+    const wsUrl = `${this.gatewayUrl}/ws/session/${this.sessionId}?token=${this.token}`;
+
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.ws?.close();
+        this.status = 'error';
+        reject(new Error(`ROS 2 bridge connection timeout after ${this.timeoutMs}ms`));
+      }, this.timeoutMs);
+
+      this.ws = new WebSocket(wsUrl);
+
+      this.ws.onopen = () => {
+        clearTimeout(timer);
+        this.status = 'connected';
+        this.startTime = Date.now();
+        resolve();
+      };
+
+      this.ws.onerror = (event) => {
+        clearTimeout(timer);
+        this.status = 'error';
+        reject(new Error(`ROS 2 bridge WebSocket error: ${String(event)}`));
+      };
+
+      this.ws.onclose = () => {
+        this.status = 'disconnected';
+      };
+
+      this.ws.onmessage = (event) => {
+        try {
+          const frame = JSON.parse(String(event.data)) as TelemetryFrame;
+          // Annotate with ROS 2 namespace if present
+          if (frame.ros2 && this.ros2Namespace) {
+            frame.ros2.namespace = this.ros2Namespace;
+          }
+          this.lastFrame = frame;
+          for (const listener of this.listeners) {
+            listener(frame);
+          }
+        } catch {
+          // Skip malformed frames
+        }
+      };
+    });
+  }
+
+  async disconnect(): Promise<void> {
+    this.ws?.close();
+    this.ws = null;
+    this.status = 'disconnected';
+    this.lastFrame = null;
+  }
+
+  async sendCommand(command: RobotCommand): Promise<void> {
+    if (!this.ws || this.status !== 'connected') {
+      throw new Error('Robot not connected');
+    }
+    this.ws.send(JSON.stringify({
+      ...command,
+      ros2Namespace: this.ros2Namespace,
+    }));
+  }
+
+  getTelemetry(): TelemetryFrame | null {
+    return this.lastFrame;
+  }
+
+  getStatus() {
+    return {
+      status: this.status,
+      uptimeMs: this.status === 'connected' ? Date.now() - this.startTime : 0,
+      sampleRateHz: this.sampleRateHz,
+    };
+  }
+
+  onTelemetry(callback: (frame: TelemetryFrame) => void): () => void {
+    this.listeners.add(callback);
+    return () => {
+      this.listeners.delete(callback);
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
-export type RobotDriverType = 'mock' | 'websocket';
+export type RobotDriverType = 'mock' | 'websocket' | 'ros2';
 
 export function createRobotDriver(
   type: RobotDriverType,
-  config: RobotConnectionConfig,
+  config: RobotConnectionConfig & { sessionId?: string; token?: string; ros2Namespace?: string },
   sampleRateHz = DEFAULT_SAMPLE_RATE_HZ,
 ): RobotDriver {
   switch (type) {
@@ -274,6 +411,15 @@ export function createRobotDriver(
       return new MockRobotDriver(config, sampleRateHz);
     case 'websocket':
       return new WebSocketRobotDriver(config, sampleRateHz);
+    case 'ros2': {
+      if (!config.sessionId || !config.token) {
+        throw new Error('ROS 2 driver requires sessionId and token in config');
+      }
+      return new ROS2RobotDriver(
+        config as RobotConnectionConfig & { sessionId: string; token: string; ros2Namespace?: string },
+        sampleRateHz,
+      );
+    }
     default:
       throw new Error(`Unsupported robot driver type: ${type}`);
   }

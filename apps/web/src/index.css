@@ -2,36 +2,67 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Global Styles ─────────────────────────────────────── */
+/* ── Base — always dark ──────────────────────────────────── */
+:root {
+  color-scheme: dark;
+}
+
+html {
+  background-color: #07090E;
+  color: #F0F6FC;
+}
+
+/* ── Scrollbars ──────────────────────────────────────────── */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #334155 transparent;
+  scrollbar-color: #1C2333 transparent;
 }
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1C2333; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #2E3F5C; }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #475569;
-}
-
-/* ── Animations ────────────────────────────────────────── */
+/* ── Animations ──────────────────────────────────────────── */
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-.animate-fade-in {
-  animation: fade-in 0.2s ease-out;
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(100%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slide-out-right {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(100%); }
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(37,99,235,0.3); }
+  50%       { box-shadow: 0 0 20px rgba(37,99,235,0.6); }
+}
+
+.animate-fade-in       { animation: fade-in 0.2s ease-out; }
+.animate-slide-in-right { animation: slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.animate-slide-out-right { animation: slide-out-right 0.2s ease-in; }
+.animate-pulse-subtle  { animation: pulse-subtle 2s ease-in-out infinite; }
+.animate-glow-pulse    { animation: glow-pulse 2s ease-in-out infinite; }
+
+/* ── Focus ring — consistent across app ─────────────────── */
+:focus-visible {
+  outline: 2px solid #2563EB;
+  outline-offset: 2px;
+}
+
+/* ── Selection ───────────────────────────────────────────── */
+::selection {
+  background: rgba(37, 99, 235, 0.3);
+  color: #F0F6FC;
 }
