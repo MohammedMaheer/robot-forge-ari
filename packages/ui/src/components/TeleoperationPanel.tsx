@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { CollectionSession } from '@robotforge/types';
 import { TelemetryChart } from './TelemetryChart';
 import { cn } from '../utils/cn';
@@ -17,42 +17,119 @@ interface TeleoperationPanelProps {
   onAiAssistChange?: (enabled: boolean) => void;
   /** LiveKit room token for video streaming (when available). */
   livekitToken?: string;
+  /** LiveKit server URL */
+  livekitUrl?: string;
   /** Live quality score (0-100); shown in sidebar. */
   liveQualityScore?: number;
   className?: string;
 }
 
 // ---------------------------------------------------------------------------
-// Camera Feed (placeholder for LiveKit VideoTrack)
+// LiveKit Video Feed — renders real MediaStream when available
 // ---------------------------------------------------------------------------
 
-function CameraFeed({ name, status, livekitToken }: { name: string; status: string; livekitToken?: string }) {
+function LiveKitVideoFeed({ name, livekitUrl, livekitToken, trackSid }: { name: string; livekitUrl?: string; livekitToken?: string; trackSid?: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [streamActive, setStreamActive] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const roomRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (!livekitToken || !livekitUrl) return;
+    let cancelled = false;
+
+    async function connectToRoom() {
+      try {
+        // Dynamic import so the panel works even if @livekit/client isn't installed
+        const { Room, RoomEvent, Track } = await import('livekit-client');
+        const room = new Room({
+          adaptiveStream: true,
+          dynacast: true,
+        });
+        roomRef.current = room;
+
+        room.on(RoomEvent.TrackSubscribed, (track: any) => {
+          if (cancelled) return;
+          if (track.kind === Track.Kind.Video && videoRef.current) {
+            track.attach(videoRef.current);
+            setStreamActive(true);
+          }
+        });
+
+        room.on(RoomEvent.TrackUnsubscribed, (track: any) => {
+          if (track.kind === Track.Kind.Video) {
+            track.detach();
+            setStreamActive(false);
+          }
+        });
+
+        room.on(RoomEvent.Disconnected, () => {
+          if (!cancelled) setStreamActive(false);
+        });
+
+        await room.connect(livekitUrl, livekitToken);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to connect to video stream');
+        }
+      }
+    }
+
+    connectToRoom();
+
+    return () => {
+      cancelled = true;
+      roomRef.current?.disconnect();
+      roomRef.current = null;
+    };
+  }, [livekitUrl, livekitToken, trackSid]);
+
   return (
     <div className="relative bg-black rounded-lg overflow-hidden aspect-video group">
-      {livekitToken ? (
-        // When LiveKit token is provided, this would render a real VideoTrack
-        // import { VideoTrack } from '@livekit/components-react';
-        // <VideoTrack trackRef={...} />
+      {/* Real video element — always rendered, shown when stream is active */}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className={cn(
+          'absolute inset-0 w-full h-full object-cover transition-opacity duration-300',
+          streamActive ? 'opacity-100' : 'opacity-0'
+        )}
+      />
+
+      {/* Overlay when stream is connecting or errored */}
+      {!streamActive && (
         <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-b from-gray-900 to-black">
-          <div className="text-center">
-            <div className="w-8 h-8 mx-auto mb-1 rounded-full bg-accent-green/20 flex items-center justify-center">
-              <div className="w-3 h-3 rounded-full bg-accent-green animate-pulse" />
+          {error ? (
+            <div className="text-center">
+              <div className="w-8 h-8 mx-auto mb-1 rounded-full bg-red-500/20 flex items-center justify-center">
+                <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+                </svg>
+              </div>
+              <p className="text-xs text-red-400">Stream Error</p>
+              <p className="text-[10px] text-text-secondary mt-0.5">{name}</p>
             </div>
-            <p className="text-xs text-green-400">Live Stream Active</p>
-            <p className="text-[10px] text-text-secondary mt-0.5">{name}</p>
-          </div>
-        </div>
-      ) : (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center">
-            <div className="w-10 h-10 mx-auto mb-2 rounded-full bg-surface-elevated flex items-center justify-center">
-              <svg className="w-5 h-5 text-text-secondary" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" />
-              </svg>
+          ) : livekitToken ? (
+            <div className="text-center">
+              <div className="w-8 h-8 mx-auto mb-1 rounded-full bg-accent-green/20 flex items-center justify-center">
+                <div className="w-3 h-3 rounded-full bg-accent-green animate-pulse" />
+              </div>
+              <p className="text-xs text-green-400">Connecting…</p>
+              <p className="text-[10px] text-text-secondary mt-0.5">{name}</p>
             </div>
-            <p className="text-xs text-text-secondary">{name}</p>
-            <p className="text-[10px] text-text-secondary mt-0.5">{status}</p>
-          </div>
+          ) : (
+            <div className="text-center">
+              <div className="w-10 h-10 mx-auto mb-2 rounded-full bg-surface-elevated flex items-center justify-center">
+                <svg className="w-5 h-5 text-text-secondary" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" />
+                </svg>
+              </div>
+              <p className="text-xs text-text-secondary">{name}</p>
+              <p className="text-[10px] text-text-secondary mt-0.5">No token</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -60,6 +137,14 @@ function CameraFeed({ name, status, livekitToken }: { name: string; status: stri
       <span className="absolute top-2 left-2 px-1.5 py-0.5 bg-black/60 text-white text-[10px] rounded backdrop-blur-sm">
         {name}
       </span>
+
+      {/* Live indicator when streaming */}
+      {streamActive && (
+        <span className="absolute top-2 right-2 flex items-center gap-1 px-1.5 py-0.5 bg-red-600/80 text-white text-[10px] rounded backdrop-blur-sm">
+          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+          LIVE
+        </span>
+      )}
     </div>
   );
 }
@@ -68,7 +153,7 @@ function CameraFeed({ name, status, livekitToken }: { name: string; status: stri
 // Component
 // ---------------------------------------------------------------------------
 
-export function TeleoperationPanel({ session, onStart, onStop, onEmergencyStop, onAiAssistChange, livekitToken, liveQualityScore, className }: TeleoperationPanelProps) {
+export function TeleoperationPanel({ session, onStart, onStop, onEmergencyStop, onAiAssistChange, livekitToken, livekitUrl, liveQualityScore, className }: TeleoperationPanelProps) {
   const [aiAssist, setAiAssist] = useState(session.mode === 'ai_assisted');
 
   const isRecording = session.status === 'recording';
@@ -106,6 +191,7 @@ export function TeleoperationPanel({ session, onStart, onStop, onEmergencyStop, 
       ...cam,
       robotName: robot.name,
       robotStatus: robot.status,
+      livekitTrackId: cam.livekitTrackId,
     }))
   );
 
@@ -161,11 +247,12 @@ export function TeleoperationPanel({ session, onStart, onStop, onEmergencyStop, 
           )}>
             {allCameras.length > 0 ? (
               allCameras.map((cam) => (
-                <CameraFeed
+                <LiveKitVideoFeed
                   key={cam.id}
                   name={`${cam.robotName} / ${cam.name}`}
-                  status={cam.robotStatus}
+                  livekitUrl={livekitUrl}
                   livekitToken={livekitToken}
+                  trackSid={cam.livekitTrackId}
                 />
               ))
             ) : (

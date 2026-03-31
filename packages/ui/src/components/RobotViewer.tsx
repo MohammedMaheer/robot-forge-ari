@@ -1,5 +1,5 @@
-import React, { useRef, useMemo, Suspense } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import React, { useRef, useMemo, Suspense, useState, useEffect } from 'react';
+import { Canvas, useFrame, useLoader } from '@react-three/fiber';
 import { OrbitControls, Grid, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { RobotTelemetry } from '@robotforge/types';
@@ -24,7 +24,253 @@ interface RobotViewerProps {
 }
 
 // ---------------------------------------------------------------------------
-// Joint visualizer — updates at 50Hz from telemetry
+// URDF Parser — parses URDF XML into a joint/link tree
+// ---------------------------------------------------------------------------
+
+interface URDFJoint {
+  name: string;
+  type: 'revolute' | 'prismatic' | 'fixed' | 'continuous' | 'floating' | 'planar';
+  parentLink: string;
+  childLink: string;
+  origin: { xyz: [number, number, number]; rpy: [number, number, number] };
+  axis: [number, number, number];
+}
+
+interface URDFLink {
+  name: string;
+  visual?: {
+    geometry: { type: 'box' | 'cylinder' | 'sphere' | 'mesh'; params: number[]; meshUrl?: string };
+    origin: { xyz: [number, number, number]; rpy: [number, number, number] };
+    color: [number, number, number, number];
+  };
+}
+
+interface URDFModel {
+  name: string;
+  links: Map<string, URDFLink>;
+  joints: URDFJoint[];
+  rootLink: string;
+}
+
+function parseOrigin(el: Element | null): { xyz: [number, number, number]; rpy: [number, number, number] } {
+  if (!el) return { xyz: [0, 0, 0], rpy: [0, 0, 0] };
+  const xyz = (el.getAttribute('xyz') ?? '0 0 0').split(' ').map(Number) as [number, number, number];
+  const rpy = (el.getAttribute('rpy') ?? '0 0 0').split(' ').map(Number) as [number, number, number];
+  return { xyz, rpy };
+}
+
+function parseURDF(xml: string): URDFModel {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, 'text/xml');
+  const robot = doc.querySelector('robot');
+  const name = robot?.getAttribute('name') ?? 'robot';
+
+  const links = new Map<string, URDFLink>();
+  const childLinks = new Set<string>();
+
+  doc.querySelectorAll('link').forEach((linkEl) => {
+    const linkName = linkEl.getAttribute('name') ?? '';
+    const visualEl = linkEl.querySelector('visual');
+    let visual: URDFLink['visual'] = undefined;
+
+    if (visualEl) {
+      const geoEl = visualEl.querySelector('geometry');
+      const originEl = visualEl.querySelector('origin');
+      const materialEl = visualEl.querySelector('material');
+      let geometry: URDFLink['visual'] extends undefined ? never : NonNullable<URDFLink['visual']>['geometry'] = { type: 'box', params: [0.05, 0.05, 0.05] };
+
+      if (geoEl) {
+        const box = geoEl.querySelector('box');
+        const cyl = geoEl.querySelector('cylinder');
+        const sphere = geoEl.querySelector('sphere');
+        const mesh = geoEl.querySelector('mesh');
+
+        if (box) {
+          const size = (box.getAttribute('size') ?? '0.05 0.05 0.05').split(' ').map(Number);
+          geometry = { type: 'box', params: size };
+        } else if (cyl) {
+          const r = Number(cyl.getAttribute('radius') ?? 0.025);
+          const l = Number(cyl.getAttribute('length') ?? 0.1);
+          geometry = { type: 'cylinder', params: [r, l] };
+        } else if (sphere) {
+          const r = Number(sphere.getAttribute('radius') ?? 0.03);
+          geometry = { type: 'sphere', params: [r] };
+        } else if (mesh) {
+          geometry = { type: 'mesh', params: [], meshUrl: mesh.getAttribute('filename') ?? undefined };
+        }
+      }
+
+      let color: [number, number, number, number] = [0.4, 0.4, 0.4, 1];
+      if (materialEl) {
+        const colorEl = materialEl.querySelector('color');
+        if (colorEl) {
+          const rgba = (colorEl.getAttribute('rgba') ?? '0.4 0.4 0.4 1').split(' ').map(Number);
+          color = [rgba[0], rgba[1], rgba[2], rgba[3] ?? 1];
+        }
+      }
+
+      visual = {
+        geometry,
+        origin: parseOrigin(originEl),
+        color,
+      };
+    }
+
+    links.set(linkName, { name: linkName, visual });
+  });
+
+  const joints: URDFJoint[] = [];
+  doc.querySelectorAll('joint').forEach((jointEl) => {
+    const jName = jointEl.getAttribute('name') ?? '';
+    const jType = (jointEl.getAttribute('type') ?? 'fixed') as URDFJoint['type'];
+    const parentEl = jointEl.querySelector('parent');
+    const childEl = jointEl.querySelector('child');
+    const originEl = jointEl.querySelector('origin');
+    const axisEl = jointEl.querySelector('axis');
+
+    const parentLink = parentEl?.getAttribute('link') ?? '';
+    const childLink = childEl?.getAttribute('link') ?? '';
+    childLinks.add(childLink);
+
+    const axis = axisEl
+      ? (axisEl.getAttribute('xyz') ?? '0 0 1').split(' ').map(Number) as [number, number, number]
+      : [0, 0, 1] as [number, number, number];
+
+    joints.push({
+      name: jName,
+      type: jType,
+      parentLink,
+      childLink,
+      origin: parseOrigin(originEl),
+      axis,
+    });
+  });
+
+  // Root link = a link that is never a child
+  let rootLink = '';
+  for (const [linkName] of links) {
+    if (!childLinks.has(linkName)) {
+      rootLink = linkName;
+      break;
+    }
+  }
+
+  return { name, links, joints, rootLink };
+}
+
+// ---------------------------------------------------------------------------
+// URDF Visualizer — renders parsed URDF model with telemetry
+// ---------------------------------------------------------------------------
+
+function URDFLinkMesh({ link }: { link: URDFLink }) {
+  if (!link.visual) return null;
+  const { geometry, origin, color } = link.visual;
+
+  const euler = new THREE.Euler(origin.rpy[0], origin.rpy[1], origin.rpy[2], 'XYZ');
+
+  let geo: React.ReactElement;
+  switch (geometry.type) {
+    case 'box':
+      geo = <boxGeometry args={geometry.params as [number, number, number]} />;
+      break;
+    case 'cylinder':
+      geo = <cylinderGeometry args={[geometry.params[0], geometry.params[0], geometry.params[1], 16]} />;
+      break;
+    case 'sphere':
+      geo = <sphereGeometry args={[geometry.params[0], 16, 16]} />;
+      break;
+    default:
+      geo = <boxGeometry args={[0.05, 0.05, 0.05]} />;
+  }
+
+  return (
+    <mesh position={origin.xyz} rotation={euler}>
+      {geo}
+      <meshStandardMaterial color={new THREE.Color(color[0], color[1], color[2])} opacity={color[3]} transparent={color[3] < 1} />
+    </mesh>
+  );
+}
+
+function URDFVisualizer({ model, telemetry, showLabels }: { model: URDFModel; telemetry?: RobotTelemetry; showLabels?: boolean }) {
+  const groupRefs = useRef<Map<string, THREE.Group>>(new Map());
+  const movableJoints = useMemo(
+    () => model.joints.filter((j) => j.type === 'revolute' || j.type === 'continuous' || j.type === 'prismatic'),
+    [model]
+  );
+
+  useFrame(() => {
+    if (!telemetry) return;
+    movableJoints.forEach((joint, idx) => {
+      const group = groupRefs.current.get(joint.name);
+      if (!group || idx >= telemetry.jointPositions.length) return;
+
+      const val = telemetry.jointPositions[idx];
+      if (joint.type === 'prismatic') {
+        group.position.set(
+          joint.origin.xyz[0] + joint.axis[0] * val,
+          joint.origin.xyz[1] + joint.axis[1] * val,
+          joint.origin.xyz[2] + joint.axis[2] * val,
+        );
+      } else {
+        // Revolute/continuous — rotate around axis
+        const axisVec = new THREE.Vector3(...joint.axis).normalize();
+        const baseEuler = new THREE.Euler(joint.origin.rpy[0], joint.origin.rpy[1], joint.origin.rpy[2], 'XYZ');
+        const baseQuat = new THREE.Quaternion().setFromEuler(baseEuler);
+        const jointQuat = new THREE.Quaternion().setFromAxisAngle(axisVec, val);
+        group.quaternion.copy(baseQuat.multiply(jointQuat));
+      }
+    });
+  });
+
+  // Build tree recursively
+  function renderLink(linkName: string): React.ReactElement | null {
+    const link = model.links.get(linkName);
+    if (!link) return null;
+
+    // Find joints where this link is the parent
+    const childJoints = model.joints.filter((j) => j.parentLink === linkName);
+
+    return (
+      <group key={linkName}>
+        <URDFLinkMesh link={link} />
+        {childJoints.map((joint) => {
+          const isMovable = joint.type === 'revolute' || joint.type === 'continuous' || joint.type === 'prismatic';
+          const jIdx = movableJoints.indexOf(joint);
+
+          return (
+            <group
+              key={joint.name}
+              ref={(ref: THREE.Group | null) => { if (ref) groupRefs.current.set(joint.name, ref); }}
+              position={joint.origin.xyz}
+              rotation={new THREE.Euler(joint.origin.rpy[0], joint.origin.rpy[1], joint.origin.rpy[2], 'XYZ')}
+            >
+              {/* Joint sphere indicator */}
+              {isMovable && (
+                <mesh>
+                  <sphereGeometry args={[0.015, 12, 12]} />
+                  <meshStandardMaterial color="#2ECC71" emissive="#2ECC71" emissiveIntensity={0.2} />
+                  {showLabels && (
+                    <Html position={[0.05, 0, 0]} center>
+                      <span className="text-[9px] text-green-400 whitespace-nowrap bg-black/60 px-1 rounded">
+                        {joint.name} {telemetry && jIdx >= 0 ? `${(telemetry.jointPositions[jIdx] * (180 / Math.PI)).toFixed(1)}°` : ''}
+                      </span>
+                    </Html>
+                  )}
+                </mesh>
+              )}
+              {renderLink(joint.childLink)}
+            </group>
+          );
+        })}
+      </group>
+    );
+  }
+
+  return <>{renderLink(model.rootLink)}</>;
+}
+
+// ---------------------------------------------------------------------------
+// Fallback joint visualizer (when no URDF)
 // ---------------------------------------------------------------------------
 
 interface JointVisualizerProps {
@@ -145,7 +391,7 @@ function EndEffectorMarker({ telemetry, showTrajectory }: { telemetry?: RobotTel
 // Scene
 // ---------------------------------------------------------------------------
 
-function RobotScene({ telemetry, showLabels, showTrajectory }: { telemetry?: RobotTelemetry; showLabels?: boolean; showTrajectory?: boolean }) {
+function RobotScene({ urdfModel, telemetry, showLabels, showTrajectory }: { urdfModel?: URDFModel; telemetry?: RobotTelemetry; showLabels?: boolean; showTrajectory?: boolean }) {
   return (
     <>
       <ambientLight intensity={0.4} />
@@ -159,7 +405,11 @@ function RobotScene({ telemetry, showLabels, showTrajectory }: { telemetry?: Rob
         sectionColor="#475569"
         fadeDistance={10}
       />
-      <JointVisualizer telemetry={telemetry} showLabels={showLabels} />
+      {urdfModel ? (
+        <URDFVisualizer model={urdfModel} telemetry={telemetry} showLabels={showLabels} />
+      ) : (
+        <JointVisualizer telemetry={telemetry} showLabels={showLabels} />
+      )}
       <EndEffectorMarker telemetry={telemetry} showTrajectory={showTrajectory} />
       <OrbitControls
         enableDamping
@@ -177,6 +427,35 @@ function RobotScene({ telemetry, showLabels, showTrajectory }: { telemetry?: Rob
 // ---------------------------------------------------------------------------
 
 export function RobotViewer({ urdfUrl, telemetry, width, height, className, showLabels = false, showTrajectory = true, cameraPosition }: RobotViewerProps) {
+  const [urdfModel, setUrdfModel] = useState<URDFModel | undefined>(undefined);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!urdfUrl) return;
+    let cancelled = false;
+
+    async function loadURDF() {
+      try {
+        const res = await fetch(urdfUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const xml = await res.text();
+        if (!cancelled) {
+          const model = parseURDF(xml);
+          setUrdfModel(model);
+          setLoadError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Failed to load URDF');
+          setUrdfModel(undefined);
+        }
+      }
+    }
+
+    loadURDF();
+    return () => { cancelled = true; };
+  }, [urdfUrl]);
+
   return (
     <div
       className={cn('relative rounded-lg overflow-hidden bg-surface border border-surface-border', className)}
@@ -190,7 +469,7 @@ export function RobotViewer({ urdfUrl, telemetry, width, height, className, show
         }}
       >
         <Suspense fallback={null}>
-          <RobotScene telemetry={telemetry} showLabels={showLabels} showTrajectory={showTrajectory} />
+          <RobotScene urdfModel={urdfModel} telemetry={telemetry} showLabels={showLabels} showTrajectory={showTrajectory} />
         </Suspense>
       </Canvas>
 
@@ -200,10 +479,31 @@ export function RobotViewer({ urdfUrl, telemetry, width, height, className, show
           <p>EE: ({telemetry.endEffectorPose.x.toFixed(3)}, {telemetry.endEffectorPose.y.toFixed(3)}, {telemetry.endEffectorPose.z.toFixed(3)})</p>
           <p>Joints: {telemetry.jointPositions.length} DoF</p>
           {telemetry.gripperPosition !== undefined && (
-            <p>Gripper: {telemetry.gripperPosition.toFixed(0)}%</p>
+            <p>Gripper: {(telemetry.gripperPosition * 100).toFixed(0)}%</p>
           )}
         </div>
       )}
+
+      {/* URDF status indicator */}
+      <div className="absolute top-2 right-2 text-[10px] backdrop-blur-sm">
+        {urdfModel ? (
+          <span className="bg-accent-green/20 text-accent-green px-1.5 py-0.5 rounded">
+            URDF: {urdfModel.name}
+          </span>
+        ) : loadError ? (
+          <span className="bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded" title={loadError}>
+            URDF Error
+          </span>
+        ) : urdfUrl ? (
+          <span className="bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded">
+            Loading URDF…
+          </span>
+        ) : (
+          <span className="bg-gray-500/20 text-gray-400 px-1.5 py-0.5 rounded">
+            Scaffold View
+          </span>
+        )}
+      </div>
     </div>
   );
 }

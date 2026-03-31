@@ -19,7 +19,7 @@ import type {
 const EMBODIMENTS: RobotEmbodiment[] = [
   'ur5', 'ur10', 'franka_panda', 'xarm6', 'xarm7',
   'unitree_h1', 'unitree_g1', 'figure01', 'agility_digit',
-  'boston_dynamics_spot', 'clearpath_husky', 'custom',
+  'boston_dynamics_spot', 'clearpath_husky', 'so100', 'so101', 'custom',
 ];
 
 const CONNECTION_TYPES: RobotConnectionType[] = ['ros2', 'grpc', 'websocket', 'usb'];
@@ -291,7 +291,7 @@ export function CollectionPage() {
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">Collection Mode</label>
             <div className="flex gap-3">
-              {(['manual', 'ai_assisted'] as SessionMode[]).map((m) => (
+              {(['manual', 'ai_assisted', 'leader_follower'] as SessionMode[]).map((m) => (
                 <button
                   key={m}
                   onClick={() => setMode(m)}
@@ -299,11 +299,13 @@ export function CollectionPage() {
                     mode === m
                       ? m === 'ai_assisted'
                         ? 'bg-accent-green/20 text-accent-green border border-accent-green/30'
-                        : 'bg-brand-blue text-white'
+                        : m === 'leader_follower'
+                          ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                          : 'bg-brand-blue text-white'
                       : 'bg-surface border border-surface-border text-text-secondary hover:text-text-primary'
                   }`}
                 >
-                  {m === 'manual' ? '🎮 Manual' : '🤖 AI-Assisted'}
+                  {m === 'manual' ? '🎮 Manual' : m === 'ai_assisted' ? '🤖 AI-Assisted' : '🔗 Leader-Follower'}
                 </button>
               ))}
             </div>

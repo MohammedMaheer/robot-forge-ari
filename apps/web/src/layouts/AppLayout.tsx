@@ -12,6 +12,8 @@ const NAV_ITEMS = [
   { to: '/episodes', label: 'Episodes', icon: '🎬' },
   { to: '/marketplace', label: 'Marketplace', icon: '🏪' },
   { to: '/datasets', label: 'My Datasets', icon: '📦' },
+  { to: '/fleet', label: 'Fleet', icon: '🔗' },
+  { to: '/policy', label: 'Policy', icon: '🧠' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 

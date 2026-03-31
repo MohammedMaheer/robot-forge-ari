@@ -58,15 +58,15 @@ export function registerRobotsIpc(ipcMain: IpcMain): void {
           ros2Namespace: r.namespace ?? '',
         }));
       }
-    } catch {
-      // Backend unreachable — fall back to mock
+    } catch (err) {
+      console.warn('[robots.ipc] Collection-service unreachable, using mock robots:', (err as Error).message ?? err);
     }
 
-    // Mock discovery fallback
+    // Mock discovery fallback — tagged with source:'mock' so the UI can warn the user
     return [
-      { id: 'franka-sim-01', name: 'Franka Emika Panda (Sim)', host: '127.0.0.1', port: 9090, type: 'franka', connectionType: 'websocket' },
-      { id: 'ur5e-sim-01', name: 'UR5e (Sim)', host: '127.0.0.1', port: 9091, type: 'ur5e', connectionType: 'websocket' },
-      { id: 'so101-sim-01', name: 'SO-101 (Sim)', host: '127.0.0.1', port: 9092, type: 'so101', connectionType: 'ros2', ros2Namespace: '/robot/so101' },
+      { id: 'franka-sim-01', name: 'Franka Emika Panda (Sim)', host: '127.0.0.1', port: 9090, type: 'franka', connectionType: 'websocket', source: 'mock' as const },
+      { id: 'ur5e-sim-01', name: 'UR5e (Sim)', host: '127.0.0.1', port: 9091, type: 'ur5e', connectionType: 'websocket', source: 'mock' as const },
+      { id: 'so101-sim-01', name: 'SO-101 (Sim)', host: '127.0.0.1', port: 9092, type: 'so101', connectionType: 'ros2', ros2Namespace: '/robot/so101', source: 'mock' as const },
     ];
   });
 

@@ -16,6 +16,13 @@ import type {
   CollectionSession,
   SessionConfig,
   EpisodeFilter,
+  ConnectedRobot,
+  RobotConnectionConfig,
+  FleetStatus,
+  FleetRobot,
+  RosbagRecording,
+  PolicyServerConfig,
+  PolicyServerStatus,
 } from '@robotforge/types';
 
 // ---------------------------------------------------------------------------
@@ -222,6 +229,105 @@ export class RobotForgeApiClient {
     const { data } = await this.client.post<ApiResponse<CollectionSession>>(
       `/sessions/${id}/stop`,
     );
+    return data;
+  }
+
+  // ─── Robots ───────────────────────────────────────────────────
+
+  async listRobots(): Promise<ApiResponse<ConnectedRobot[]>> {
+    const { data } = await this.client.get<ApiResponse<ConnectedRobot[]>>('/collection/robots');
+    return data;
+  }
+
+  async connectRobot(config: RobotConnectionConfig): Promise<ApiResponse<ConnectedRobot>> {
+    const { data } = await this.client.post<ApiResponse<ConnectedRobot>>('/collection/robots/connect', config);
+    return data;
+  }
+
+  async disconnectRobot(robotId: string): Promise<ApiResponse<void>> {
+    const { data } = await this.client.post<ApiResponse<void>>(`/collection/robots/${robotId}/disconnect`);
+    return data;
+  }
+
+  // ─── Dashboard ────────────────────────────────────────────────
+
+  async getDashboardKpis(): Promise<ApiResponse<Record<string, unknown>>> {
+    const { data } = await this.client.get<ApiResponse<Record<string, unknown>>>('/collection/dashboard/kpis');
+    return data;
+  }
+
+  async getDashboardActivity(): Promise<ApiResponse<unknown[]>> {
+    const { data } = await this.client.get<ApiResponse<unknown[]>>('/collection/dashboard/activity');
+    return data;
+  }
+
+  async getDashboardEfficiency(): Promise<ApiResponse<unknown[]>> {
+    const { data } = await this.client.get<ApiResponse<unknown[]>>('/collection/dashboard/efficiency');
+    return data;
+  }
+
+  // ─── Fleet Management (ROS 2) ────────────────────────────────
+
+  async getFleetStatus(): Promise<ApiResponse<FleetStatus>> {
+    const { data } = await this.client.get<ApiResponse<FleetStatus>>('/collection/fleet/status');
+    return data;
+  }
+
+  async listFleetRobots(): Promise<ApiResponse<FleetRobot[]>> {
+    const { data } = await this.client.get<ApiResponse<FleetRobot[]>>('/collection/fleet/robots');
+    return data;
+  }
+
+  async getFleetNamespaces(): Promise<ApiResponse<string[]>> {
+    const { data } = await this.client.get<ApiResponse<string[]>>('/collection/fleet/namespaces');
+    return data;
+  }
+
+  // ─── Recording (ROS 2 Rosbag2) ───────────────────────────────
+
+  async startRecording(params: {
+    sessionId: string;
+    topicFilters?: string[];
+    storageFormat?: 'mcap' | 'sqlite3';
+  }): Promise<ApiResponse<RosbagRecording>> {
+    const { data } = await this.client.post<ApiResponse<RosbagRecording>>('/collection/recording/start', params);
+    return data;
+  }
+
+  async stopRecording(recordingId: string): Promise<ApiResponse<RosbagRecording>> {
+    const { data } = await this.client.post<ApiResponse<RosbagRecording>>(`/collection/recording/${recordingId}/stop`);
+    return data;
+  }
+
+  async getRecordingStatus(recordingId: string): Promise<ApiResponse<RosbagRecording>> {
+    const { data } = await this.client.get<ApiResponse<RosbagRecording>>(`/collection/recording/${recordingId}`);
+    return data;
+  }
+
+  async convertRecording(recordingId: string, targetFormat: 'mcap' | 'sqlite3'): Promise<ApiResponse<RosbagRecording>> {
+    const { data } = await this.client.post<ApiResponse<RosbagRecording>>(`/collection/recording/${recordingId}/convert`, { targetFormat });
+    return data;
+  }
+
+  // ─── Policy Server (ROS 2) ───────────────────────────────────
+
+  async connectPolicyServer(config: PolicyServerConfig): Promise<ApiResponse<PolicyServerStatus>> {
+    const { data } = await this.client.post<ApiResponse<PolicyServerStatus>>('/collection/policy/connect', config);
+    return data;
+  }
+
+  async disconnectPolicyServer(): Promise<ApiResponse<void>> {
+    const { data } = await this.client.post<ApiResponse<void>>('/collection/policy/disconnect');
+    return data;
+  }
+
+  async getPolicyStatus(): Promise<ApiResponse<PolicyServerStatus>> {
+    const { data } = await this.client.get<ApiResponse<PolicyServerStatus>>('/collection/policy/status');
+    return data;
+  }
+
+  async runPolicyInference(payload: Record<string, unknown>): Promise<ApiResponse<Record<string, unknown>>> {
+    const { data } = await this.client.post<ApiResponse<Record<string, unknown>>>('/collection/policy/infer', payload);
     return data;
   }
 }

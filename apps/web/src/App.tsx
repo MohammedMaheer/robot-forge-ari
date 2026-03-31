@@ -18,6 +18,8 @@ import { CreateDatasetPage } from '@/pages/CreateDatasetPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { ApiKeysPage } from '@/pages/ApiKeysPage';
 import { AdminPage } from '@/pages/AdminPage';
+import { FleetPage } from '@/pages/FleetPage';
+import { PolicyPage } from '@/pages/PolicyPage';
 
 function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?: string[] }) {
   const { isAuthenticated, user } = useAuthStore();
@@ -48,6 +50,8 @@ export function App() {
         <Route path="/marketplace/:id" element={<DatasetDetailPage />} />
         <Route path="/datasets" element={<MyDatasetsPage />} />
         <Route path="/datasets/new" element={<CreateDatasetPage />} />
+        <Route path="/fleet" element={<FleetPage />} />
+        <Route path="/policy" element={<PolicyPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/api-keys" element={<ApiKeysPage />} />
         <Route path="/admin" element={<ProtectedRoute roles={['admin']}><AdminPage /></ProtectedRoute>} />

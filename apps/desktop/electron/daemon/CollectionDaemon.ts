@@ -51,6 +51,12 @@ export class CollectionDaemon extends EventEmitter {
   private _startTime = 0;
   private _intervalHandle: ReturnType<typeof setInterval> | null = null;
   private _buffer: TelemetrySample[] = [];
+  /** Cached real telemetry from the collection-service WebSocket */
+  private _latestRemoteTelemetry: TelemetrySample | null = null;
+  private _wsConnection: any = null;
+
+  private static readonly COLLECTION_SERVICE_URL =
+    process.env.COLLECTION_SERVICE_URL ?? 'http://localhost:8001';
 
   get isRunning(): boolean {
     return this._running;
@@ -64,6 +70,9 @@ export class CollectionDaemon extends EventEmitter {
     this._paused = false;
     this._startTime = Date.now();
     this._episodesRecorded = 0;
+
+    // Attempt to connect to collection-service for real telemetry
+    this.connectToRemoteTelemetry(config.robotId);
 
     const intervalMs = Math.round(1000 / config.sampleRateHz);
 
@@ -92,6 +101,13 @@ export class CollectionDaemon extends EventEmitter {
       clearInterval(this._intervalHandle);
       this._intervalHandle = null;
     }
+
+    // Clean up WebSocket
+    if (this._wsConnection) {
+      try { this._wsConnection.close(); } catch { /* ignore */ }
+      this._wsConnection = null;
+    }
+    this._latestRemoteTelemetry = null;
 
     this._running = false;
     this._paused = false;
@@ -171,10 +187,75 @@ export class CollectionDaemon extends EventEmitter {
   }
 
   /**
-   * Generate a mock telemetry sample.
-   * In production: read from ROS 2 topics or hardware SDK.
+   * Attempt to connect to the collection-service telemetry WebSocket.
+   * If the service is reachable, real robot telemetry will be used.
+   * Falls back silently to mock data if the connection fails.
+   */
+  private connectToRemoteTelemetry(robotId: string): void {
+    try {
+      const wsUrl = CollectionDaemon.COLLECTION_SERVICE_URL
+        .replace(/^http/, 'ws') + `/ws/telemetry?robot_id=${encodeURIComponent(robotId)}`;
+
+      // Use dynamic import for WebSocket in case running in an environment without it
+      const WS = typeof WebSocket !== 'undefined' ? WebSocket : null;
+      if (!WS) {
+        console.log('[daemon] WebSocket not available — using mock telemetry');
+        return;
+      }
+
+      const ws = new WS(wsUrl);
+      this._wsConnection = ws;
+
+      ws.onmessage = (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(typeof event.data === 'string' ? event.data : '');
+          this._latestRemoteTelemetry = {
+            timestamp: data.timestamp ?? Date.now(),
+            jointPositions: data.joint_positions ?? data.jointPositions ?? [],
+            jointVelocities: data.joint_velocities ?? data.jointVelocities ?? [],
+            jointTorques: data.joint_torques ?? data.jointTorques ?? [],
+            endEffectorPose: data.end_effector_pose ?? data.endEffectorPose ?? { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 },
+            gripperPosition: data.gripper_position ?? data.gripperPosition ?? 0,
+            forceTorque: data.force_torque ?? data.forceTorque ?? [],
+          };
+        } catch {
+          // Malformed message — ignore
+        }
+      };
+
+      ws.onerror = () => {
+        console.log('[daemon] Telemetry WebSocket error — falling back to mock data');
+        this._latestRemoteTelemetry = null;
+      };
+
+      ws.onclose = () => {
+        console.log('[daemon] Telemetry WebSocket closed');
+        this._wsConnection = null;
+      };
+    } catch {
+      console.log('[daemon] Could not connect to remote telemetry — using mock data');
+    }
+  }
+
+  /**
+   * Get telemetry sample — uses real data from remote connection when
+   * available, falls back to generated mock data.
    */
   private generateTelemetrySample(): TelemetrySample {
+    // Prefer real telemetry from the collection-service
+    if (this._latestRemoteTelemetry) {
+      return { ...this._latestRemoteTelemetry, timestamp: Date.now() };
+    }
+
+    // Fallback: generate mock telemetry
+    return this.generateMockTelemetrySample();
+  }
+
+  /**
+   * Generate a mock telemetry sample.
+   * Used when the collection-service is unreachable.
+   */
+  private generateMockTelemetrySample(): TelemetrySample {
     const t = Date.now();
     const phase = (t % 10000) / 10000 * Math.PI * 2;
 

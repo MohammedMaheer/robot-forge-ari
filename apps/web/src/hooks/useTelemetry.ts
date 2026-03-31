@@ -27,7 +27,15 @@ export function useTelemetry(robotId: string | null) {
     emit('subscribe', { robotId });
 
     const cleanup = on('robot:state', (data: unknown) => {
-      const telemetry = data as RobotTelemetry;
+      // Runtime validation — reject malformed payloads
+      if (!data || typeof data !== 'object') return;
+      const msg = data as Record<string, unknown>;
+      if (typeof msg.robotId !== 'string') return;
+      if (!Array.isArray(msg.jointPositions)) return;
+      if (!msg.endEffectorPose || typeof msg.endEffectorPose !== 'object') return;
+      if (typeof msg.timestamp !== 'number') return;
+
+      const telemetry = msg as unknown as RobotTelemetry;
       if (telemetry.robotId !== robotId) return;
 
       setLatest(telemetry);
