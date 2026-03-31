@@ -6,7 +6,6 @@ describe('authStore', () => {
     useAuthStore.setState({
       user: null,
       accessToken: null,
-      refreshToken: null,
       isAuthenticated: false,
       isLoading: false,
     });
@@ -36,7 +35,7 @@ describe('authStore', () => {
     expect(state.user?.email).toBe('test@robotforge.ai');
   });
 
-  it('setTokens updates tokens', () => {
+  it('setTokens updates accessToken and marks authenticated', () => {
     useAuthStore.getState().setTokens({
       accessToken: 'at-123',
       refreshToken: 'rt-456',
@@ -44,6 +43,6 @@ describe('authStore', () => {
     });
     const state = useAuthStore.getState();
     expect(state.accessToken).toBe('at-123');
-    expect(state.refreshToken).toBe('rt-456');
+    expect(state.isAuthenticated).toBe(true);
   });
 });

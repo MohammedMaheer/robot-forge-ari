@@ -85,7 +85,7 @@ export function CollectionPage() {
   // Add robot handler — calls API and invalidates query
   const handleAddRobot = async () => {
     if (!newIp.trim()) return;
-    await apiClient.post('/collection/robots/connect', { name: newEmbodiment + ' @ ' + newIp, embodiment: newEmbodiment, connectionType: 'ethernet', ipAddress: newIp });
+    await apiClient.post('/collection/robots/connect', { name: newEmbodiment + ' @ ' + newIp, embodiment: newEmbodiment, connection_type: 'ros2', ip_address: newIp });
     queryClient.invalidateQueries({ queryKey: ['robots'] });
     setShowAddForm(false);
     setNewIp('');

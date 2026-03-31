@@ -193,8 +193,10 @@ export class CollectionDaemon extends EventEmitter {
    */
   private connectToRemoteTelemetry(robotId: string): void {
     try {
+      const sessionId = this.config?.sessionId ?? robotId;
+      const token = process.env.JWT_TOKEN ?? '';
       const wsUrl = CollectionDaemon.COLLECTION_SERVICE_URL
-        .replace(/^http/, 'ws') + `/ws/telemetry?robot_id=${encodeURIComponent(robotId)}`;
+        .replace(/^http/, 'ws') + `/ws/session/${encodeURIComponent(sessionId)}?token=${encodeURIComponent(token)}`;
 
       // Use dynamic import for WebSocket in case running in an environment without it
       const WS = typeof WebSocket !== 'undefined' ? WebSocket : null;

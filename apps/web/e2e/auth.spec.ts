@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { mockApi } from "./fixtures";
 
 // ─── Page Object Helpers ────────────────────────────────────────────────────
 
@@ -36,7 +37,7 @@ class RegisterPage {
   }
 
   async fillName(name: string) {
-    await this.page.getByLabel(/name/i).first().fill(name);
+    await this.page.getByLabel(/full name/i).fill(name);
   }
 
   async fillEmail(email: string) {
@@ -44,7 +45,7 @@ class RegisterPage {
   }
 
   async fillPassword(password: string) {
-    await this.page.getByLabel(/^password$/i).fill(password);
+    await this.page.getByLabel("Password", { exact: true }).fill(password);
   }
 
   async fillConfirmPassword(password: string) {
@@ -52,7 +53,7 @@ class RegisterPage {
   }
 
   async submit() {
-    await this.page.getByRole("button", { name: /sign up|register/i }).click();
+    await this.page.getByRole("button", { name: /sign up|register|create account/i }).click();
   }
 
   async register(name: string, email: string, password: string) {
@@ -68,6 +69,7 @@ class RegisterPage {
 
 test.describe("Authentication", () => {
   test("should log in and redirect to dashboard", async ({ page }) => {
+    await mockApi(page);
     const loginPage = new LoginPage(page);
 
     await loginPage.goto();
@@ -81,13 +83,14 @@ test.describe("Authentication", () => {
 
     // Verify dashboard content is visible
     await expect(
-      page.getByRole("heading", { name: /dashboard/i })
+      page.getByText(/welcome back/i)
     ).toBeVisible();
   });
 
   test("should register a new user and redirect to dashboard", async ({
     page,
   }) => {
+    await mockApi(page);
     const registerPage = new RegisterPage(page);
 
     await registerPage.goto();
@@ -102,6 +105,18 @@ test.describe("Authentication", () => {
   });
 
   test("should log out and redirect to login page", async ({ page }) => {
+    await mockApi(page);
+
+    // Make /api/auth/me return 401 AFTER logout so the app doesn't re-auth
+    let loggedOut = false;
+    await page.route("**/api/auth/me", async (route) => {
+      if (loggedOut) {
+        await route.fulfill({ status: 401, contentType: "application/json", body: '{"error":"Unauthorized"}' });
+      } else {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { id: "usr-test-001", email: "testuser@robotforge.io", name: "Test User", role: "operator", tier: "professional" } }) });
+      }
+    });
+
     const loginPage = new LoginPage(page);
 
     // Log in first
@@ -109,13 +124,12 @@ test.describe("Authentication", () => {
     await loginPage.login("testuser@robotforge.io", "TestPassword123!");
     await page.waitForURL(/\/dashboard/, { timeout: 10_000 });
 
-    // Perform logout
-    const userMenu = page.getByRole("button", { name: /user|profile|avatar/i });
-    if (await userMenu.isVisible()) {
-      await userMenu.click();
-    }
+    // Mark as logged out before clicking
+    loggedOut = true;
 
-    await page.getByRole("menuitem", { name: /log out|sign out/i }).click();
+    // Click logout button (has title="Logout")
+    const logoutButton = page.locator('button[title="Logout"]');
+    await logoutButton.click();
 
     // Should be redirected to the login page
     await page.waitForURL(/\/login/, { timeout: 10_000 });

@@ -64,8 +64,9 @@ export function RegisterPage() {
           )}
 
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Full Name</label>
+            <label htmlFor="reg-name" className="block text-xs font-medium text-text-secondary mb-1.5">Full Name</label>
             <input
+              id="reg-name"
               type="text"
               {...register('name')}
               className="w-full bg-surface border border-surface-border rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:border-mid-blue transition-colors"
@@ -75,8 +76,9 @@ export function RegisterPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Email</label>
+            <label htmlFor="reg-email" className="block text-xs font-medium text-text-secondary mb-1.5">Email</label>
             <input
+              id="reg-email"
               type="email"
               {...register('email')}
               className="w-full bg-surface border border-surface-border rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:border-mid-blue transition-colors"
@@ -86,8 +88,9 @@ export function RegisterPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Password</label>
+            <label htmlFor="reg-password" className="block text-xs font-medium text-text-secondary mb-1.5">Password</label>
             <input
+              id="reg-password"
               type="password"
               {...register('password')}
               className="w-full bg-surface border border-surface-border rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:border-mid-blue transition-colors"
@@ -97,8 +100,9 @@ export function RegisterPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Confirm Password</label>
+            <label htmlFor="reg-confirm-password" className="block text-xs font-medium text-text-secondary mb-1.5">Confirm Password</label>
             <input
+              id="reg-confirm-password"
               type="password"
               {...register('confirmPassword')}
               className="w-full bg-surface border border-surface-border rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:border-mid-blue transition-colors"

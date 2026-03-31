@@ -1,25 +1,21 @@
 import { test, expect } from "@playwright/test";
+import { loginAs } from "./fixtures";
 
 test.describe("Collection", () => {
   test.beforeEach(async ({ page }) => {
-    // Authenticate before collection tests (assumes a test user session)
-    await page.goto("/login");
-    await page.getByLabel(/email/i).fill("testuser@robotforge.io");
-    await page.getByLabel(/password/i).fill("TestPassword123!");
-    await page.getByRole("button", { name: /sign in|log in/i }).click();
-    await page.waitForURL(/\/dashboard/, { timeout: 10_000 });
+    await loginAs(page);
   });
 
   test("should navigate to collection page and go through wizard steps", async ({
     page,
   }) => {
     // Navigate to the collection page
-    await page.goto("/collection");
+    await page.goto("/collect");
     await page.waitForLoadState("networkidle");
 
     await expect(
-      page.getByRole("heading", { name: /collection|new session/i })
-    ).toBeVisible();
+      page.getByRole("heading", { name: /data collection|collection|new session/i }).first()
+    ).toBeVisible({ timeout: 10_000 });
 
     // Start a new collection session via wizard
     const startButton = page
@@ -77,7 +73,7 @@ test.describe("Collection", () => {
     page,
   }) => {
     // Navigate to an active collection session (or create one)
-    await page.goto("/collection");
+    await page.goto("/collect");
     await page.waitForLoadState("networkidle");
 
     // Look for an active session or the teleop panel
@@ -119,7 +115,7 @@ test.describe("Collection", () => {
 
   test("should view episodes list", async ({ page }) => {
     // Navigate to the collection page
-    await page.goto("/collection");
+    await page.goto("/collect");
     await page.waitForLoadState("networkidle");
 
     // Look for an episodes tab or section

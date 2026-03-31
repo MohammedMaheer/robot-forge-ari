@@ -88,8 +88,9 @@ export function LoginPage() {
           )}
 
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Email</label>
+            <label htmlFor="login-email" className="block text-xs font-medium text-text-secondary mb-1.5">Email</label>
             <input
+              id="login-email"
               type="email"
               {...register('email')}
               className="w-full bg-surface border border-surface-border rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:border-mid-blue transition-colors"
@@ -100,12 +101,13 @@ export function LoginPage() {
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-medium text-text-secondary">Password</label>
+              <label htmlFor="login-password" className="block text-xs font-medium text-text-secondary">Password</label>
               <Link to="/forgot-password" className="text-xs text-mid-blue hover:underline">
                 Forgot password?
               </Link>
             </div>
             <input
+              id="login-password"
               type="password"
               {...register('password')}
               className="w-full bg-surface border border-surface-border rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:border-mid-blue transition-colors"

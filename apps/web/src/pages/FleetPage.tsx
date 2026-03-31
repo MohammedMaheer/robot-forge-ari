@@ -177,7 +177,7 @@ export function FleetPage() {
   });
 
   const filteredRobots = (fleet?.robots ?? []).filter(
-    (r) => !namespaceFilter || r.namespace.includes(namespaceFilter)
+    (r) => !namespaceFilter || (r.namespace ?? '').includes(namespaceFilter)
   );
 
   return (
