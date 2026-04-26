@@ -47,12 +47,17 @@ export function WebSocketProvider({ children, url, autoConnect = true }: WebSock
   const [socketInstance, setSocketInstance] = useState<Socket | null>(null);
   const { accessToken } = useAuthStore();
 
+  // ── Initial connection (runs once) ────────────────────
   useEffect(() => {
     if (!autoConnect) return;
 
-    const serverUrl = url ?? import.meta.env.VITE_WS_URL ?? window.location.origin;
+    // Use VITE_WS_URL if set; otherwise fall back to the notification-service
+    // address. NEVER use window.location.origin directly because the web app
+    // runs on port 5173 while the WebSocket service runs on port 3003.
+    const serverUrl = url ?? import.meta.env.VITE_WS_URL ?? 'http://localhost:3003';
+    const token = useAuthStore.getState().accessToken;
     const socket = io(serverUrl, {
-      auth: accessToken ? { token: accessToken } : undefined,
+      auth: token ? { token } : undefined,
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 10,
@@ -71,7 +76,18 @@ export function WebSocketProvider({ children, url, autoConnect = true }: WebSock
       setSocketInstance(null);
       setConnected(false);
     };
-  }, [url, accessToken, autoConnect]);
+  // Intentionally only runs once (url + autoConnect). Token refreshes are
+  // handled below WITHOUT disconnecting the socket.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, autoConnect]);
+
+  // ── Token rotation: update auth without reconnecting ──
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket || !accessToken) return;
+    // Socket.io exposes socket.auth for re-auth without reconnect
+    (socket as any).auth = { token: accessToken };
+  }, [accessToken]);
 
   const subscribe = React.useCallback(
     <T = unknown,>(event: string, handler: (data: T) => void) => {

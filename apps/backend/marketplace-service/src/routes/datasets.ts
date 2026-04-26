@@ -76,6 +76,7 @@ datasetsRouter.get(
                   { term: { accessLevel: 'public' } },
                   ...(task ? [{ term: { task } }] : []),
                   ...(embodiment ? [{ term: { embodiments: embodiment } }] : []),
+                  ...(maxPrice ? [{ range: { pricePerEpisode: { lte: parseInt(maxPrice as string, 10) } } }] : []),
                 ],
               },
             },
@@ -103,8 +104,15 @@ datasetsRouter.get(
     // Prisma fallback
     const where: Record<string, unknown> = { accessLevel: 'public' };
     if (task) where.task = task;
+    if (embodiment) where.embodiments = { has: embodiment };
     if (format) where.format = format;
     if (minQuality) where.qualityScore = { gte: parseFloat(minQuality as string) };
+    if (maxPrice) {
+      where.pricePerEpisode = {
+        ...(where.qualityScore as object | undefined),
+        lte: parseInt(maxPrice as string, 10),
+      };
+    }
 
     const orderBy = sort === 'downloads'
       ? { downloads: 'desc' as const }

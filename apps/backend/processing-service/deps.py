@@ -18,8 +18,11 @@ load_dotenv()
 
 _security = HTTPBearer()
 
-JWT_SECRET = os.getenv("JWT_SECRET", "changeme-secret")
+JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET environment variable is required")
 
 
 async def get_current_user(

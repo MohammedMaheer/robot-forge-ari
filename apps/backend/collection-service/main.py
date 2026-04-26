@@ -16,8 +16,11 @@ import jwt as pyjwt
 
 from routers import sessions, robots, episodes, dashboard, fleet, recording, policy
 
-JWT_SECRET = os.getenv("JWT_SECRET", "changeme-secret")
+JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET environment variable is required")
 
 # ---------------------------------------------------------------------------
 # ROS 2 availability probe

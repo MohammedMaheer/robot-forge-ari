@@ -11,6 +11,12 @@ import { errorHandler } from './middleware/errorHandler';
 
 dotenv.config();
 
+const requiredEnv = ['JWT_SECRET', 'JWT_REFRESH_SECRET'];
+const missingEnv = requiredEnv.filter((key) => !process.env[key]);
+if (missingEnv.length > 0) {
+  throw new Error(`Missing required environment variables: ${missingEnv.join(', ')}`);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 

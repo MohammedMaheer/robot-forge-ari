@@ -31,11 +31,38 @@ _consumer_tag: str | None = None
 async def _on_processing_message(message: aio_pika.abc.AbstractIncomingMessage) -> None:
     """Handle an incoming processing-task message from RabbitMQ."""
     async with message.process():
+        import json
         body = message.body.decode()
         logger.info("Received processing task: %s", body)
-        # Delegate to the pipeline runner via the jobs store (fire-and-forget)
-        # In production this would deserialise & call pipeline.run_pipeline
-        await asyncio.sleep(0)  # yield to event-loop
+        try:
+            payload = json.loads(body)
+        except Exception:
+            logger.error("Failed to decode processing task payload: %s", body)
+            return
+        job_id = payload.get("job_id")
+        episode_data = payload.get("episode_data", {})
+        try:
+            from routers.jobs import _jobs
+            from models import ProcessingJobStatus
+            from routers.pipeline import run_pipeline
+            if job_id and job_id in _jobs:
+                _jobs[job_id].status = ProcessingJobStatus.running
+                _jobs[job_id].started_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+            result = await run_pipeline(job_id or "unknown", episode_data)
+            if job_id and job_id in _jobs:
+                _jobs[job_id].status = ProcessingJobStatus.completed
+                _jobs[job_id].completed_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+                _jobs[job_id].progress = 1.0
+            logger.info("Processing job %s completed: %s", job_id, result)
+        except Exception:
+            logger.exception("Processing job %s failed", job_id)
+            try:
+                from routers.jobs import _jobs
+                from models import ProcessingJobStatus
+                if job_id and job_id in _jobs:
+                    _jobs[job_id].status = ProcessingJobStatus.failed
+            except Exception:
+                pass
 
 
 async def _connect_rabbitmq() -> None:

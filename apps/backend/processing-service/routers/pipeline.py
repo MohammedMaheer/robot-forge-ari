@@ -60,6 +60,54 @@ STEP_DESCRIPTIONS: dict[str, dict[str, str]] = {
 
 
 # ---------------------------------------------------------------------------
+# Utility: run pipeline without an HTTP context (called by RabbitMQ consumer)
+# ---------------------------------------------------------------------------
+
+async def run_pipeline(job_id: str, episode_data: dict[str, Any]) -> dict:
+    """Execute the full pipeline for a given job_id + episode_data dict.
+
+    Updates ``_jobs[job_id]`` status in-place when the job exists.
+    Returns a dict of step results.
+    """
+    job = _jobs.get(job_id)
+
+    async def _step(step_fn, status_name, step_data):
+        if job:
+            job.status = status_name
+        return await step_fn(step_data)
+
+    results: list = []
+
+    if episode_data.get("mcap_path") or episode_data.get("input_format") == "mcap":
+        results.append(await _step(mcap_ingest, ProcessingJobStatus.running, episode_data))
+
+    results.append(await _step(frame_filtering, ProcessingJobStatus.frame_filtering, episode_data))
+    results.append(await _step(compression, ProcessingJobStatus.compression, episode_data))
+    results.append(await _step(annotation, ProcessingJobStatus.annotation, episode_data))
+
+    qs_started = datetime.now(timezone.utc)
+    report = await quality_scoring(episode_data)
+    _quality_reports[job_id] = report
+    if job:
+        job.quality_score = report.overall_score
+    results.append(ProcessingStepResult(
+        step=ProcessingStepName.quality_scoring,
+        status="ok",
+        metrics=report.model_dump(),
+        started_at=qs_started,
+        completed_at=datetime.now(timezone.utc),
+    ))
+
+    results.append(await _step(packaging, ProcessingJobStatus.packaging, episode_data))
+
+    if job:
+        job.status = ProcessingJobStatus.completed
+        job.completed_at = datetime.now(timezone.utc)
+
+    return {"steps": [r.model_dump() if hasattr(r, "model_dump") else r for r in results]}
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 

@@ -39,20 +39,19 @@ export function CartPage() {
 
   const checkoutMutation = useMutation({
     mutationFn: async () => {
-      // Process all items; collect first Stripe checkoutUrl (paid items)
+      // Process items until first paid checkout URL to avoid charging twice.
       let checkoutUrl: string | null = null;
       for (const item of (items ?? [])) {
         const { data } = await apiClient.post(
           `/marketplace/datasets/${item.datasetId}/purchase`
         );
         const url = data?.data?.checkoutUrl;
-        if (url && !checkoutUrl) {
+        if (url) {
           checkoutUrl = url;
-          // Don't break — continue to purchase remaining free items in loop
+          break;
         }
       }
       if (checkoutUrl) {
-        // Redirect to Stripe for first paid item; remaining paid items stay in cart
         window.location.href = checkoutUrl;
         return;
       }

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { TeleoperationPanel, EpisodeTable } from '@robotforge/ui';
 import { apiClient } from '@/lib/api';
+import { useNotifications } from '@/contexts/NotificationContext';
 import type { CollectionSession, Episode } from '@robotforge/types';
 
 // ---------------------------------------------------------------------------
@@ -12,6 +13,7 @@ import type { CollectionSession, Episode } from '@robotforge/types';
 export function ActiveSessionPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
+  const { push } = useNotifications();
 
   // ── Fetch session from API ──────────────────────────────────
   const { data: session, isLoading: sessionLoading, isError: sessionError } = useQuery<CollectionSession>({
@@ -67,15 +69,15 @@ export function ActiveSessionPage() {
     try {
       await apiClient.post(`/collection/sessions/${sessionId}/start`);
     } catch {
-      // best-effort
+      push('error', 'Recording failed to start', 'Check robot connection and try again.');
     }
   };
 
   const handleStopRecording = async () => {
     try {
-      await apiClient.post(`/collection/sessions/${sessionId}/pause`);
+      await apiClient.post(`/collection/sessions/${sessionId}/stop`);
     } catch {
-      // best-effort
+      push('error', 'Recording failed to stop', 'The session may still be active — check the session list.');
     }
   };
 
@@ -83,7 +85,7 @@ export function ActiveSessionPage() {
     try {
       await apiClient.post(`/collection/sessions/${sessionId}/stop`);
     } catch {
-      // best-effort
+      push('error', 'Session end failed', 'The session may still be active on the server.');
     }
     navigate('/collect');
   };

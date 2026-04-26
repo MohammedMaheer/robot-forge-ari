@@ -15,13 +15,21 @@ import {
 // ---------------------------------------------------------------------------
 
 const PORT = parseInt(process.env.PORT || "3004", 10);
-const JWT_SECRET = process.env.JWT_SECRET || "robotforge-dev-secret";
+const JWT_SECRET = process.env.JWT_SECRET;
 const LIVEKIT_URL = process.env.LIVEKIT_URL || "ws://localhost:7880";
-const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || "devkey";
-const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || "devsecret";
+const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
+const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
 const CORS_ORIGINS = (
   process.env.CORS_ORIGINS || "http://localhost:5173,http://localhost:5174"
 ).split(",");
+
+if (!JWT_SECRET) {
+  throw new Error("JWT_SECRET environment variable is required");
+}
+
+if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+  throw new Error("LIVEKIT_API_KEY and LIVEKIT_API_SECRET environment variables are required");
+}
 
 // ---------------------------------------------------------------------------
 // LiveKit client

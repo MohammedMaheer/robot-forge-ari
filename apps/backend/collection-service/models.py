@@ -4,10 +4,25 @@ Covers robot connection, session management, episode recording, and
 ROS 2 fleet / rosbag2 recording / policy-server relay domains.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 from datetime import datetime
 from enum import Enum
+
+
+def _to_camel(field: str) -> str:
+    parts = field.split("_")
+    return parts[0] + "".join(p.title() for p in parts[1:])
+
+
+class CamelModel(BaseModel):
+    """Base model that serialises field names as camelCase by default."""
+
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True)
+
+    def model_dump(self, **kwargs):
+        kwargs.setdefault("by_alias", True)
+        return super().model_dump(**kwargs)
 
 
 # ── Core Enums ─────────────────────────────────────────────
@@ -110,13 +125,13 @@ class RecordingState(str, Enum):
 # ── ROS 2 Models ──────────────────────────────────────────
 
 
-class Ros2TopicInfo(BaseModel):
+class Ros2TopicInfo(CamelModel):
     name: str
     message_type: str
     hz: Optional[float] = None
 
 
-class Ros2NodeStatus(BaseModel):
+class Ros2NodeStatus(CamelModel):
     node_active: bool = False
     controller_state: ControllerState = ControllerState.unconfigured
     dds_connected: bool = False
@@ -124,7 +139,7 @@ class Ros2NodeStatus(BaseModel):
     last_heartbeat: Optional[datetime] = None
 
 
-class FleetRobot(BaseModel):
+class FleetRobot(CamelModel):
     robot_id: str
     name: str
     namespace: str = ""
@@ -134,7 +149,7 @@ class FleetRobot(BaseModel):
     ros2_status: Optional[Ros2NodeStatus] = None
 
 
-class FleetStatus(BaseModel):
+class FleetStatus(CamelModel):
     total_robots: int = 0
     active_robots: int = 0
     namespaces: list[str] = []
@@ -142,13 +157,13 @@ class FleetStatus(BaseModel):
     robots: list[FleetRobot] = []
 
 
-class RecordingStartRequest(BaseModel):
+class RecordingStartRequest(CamelModel):
     session_id: str
     topic_filters: list[str] = Field(default_factory=list, description="ROS 2 topic patterns to record (empty = all)")
     storage_format: StorageFormat = StorageFormat.mcap
 
 
-class RosbagRecording(BaseModel):
+class RosbagRecording(CamelModel):
     id: str
     session_id: str
     status: RecordingState = RecordingState.recording
@@ -162,14 +177,14 @@ class RosbagRecording(BaseModel):
     stopped_at: Optional[datetime] = None
 
 
-class PolicyConnectRequest(BaseModel):
+class PolicyConnectRequest(CamelModel):
     address: str = Field(..., description="Policy server address (host:port)")
     protocol: PolicyProtocol = PolicyProtocol.grpc
     model_name: str = Field(..., description="Model to load (e.g. act, smolvla, pi0)")
     robot_id: Optional[str] = Field(None, description="Robot to bind policy output to")
 
 
-class PolicyServerStatus(BaseModel):
+class PolicyServerStatus(CamelModel):
     connected: bool = False
     address: Optional[str] = None
     protocol: Optional[PolicyProtocol] = None
@@ -183,7 +198,7 @@ class PolicyServerStatus(BaseModel):
 # ── Request/Response Models ────────────────────────────────
 
 
-class RobotConnectRequest(BaseModel):
+class RobotConnectRequest(CamelModel):
     name: str = Field(..., min_length=1, max_length=100)
     embodiment: RobotEmbodiment
     connection_type: ConnectionType
@@ -192,14 +207,14 @@ class RobotConnectRequest(BaseModel):
     ros2_namespace: Optional[str] = Field(None, description="ROS 2 namespace, e.g. /robot/arm1")
 
 
-class CameraStream(BaseModel):
+class CameraStream(CamelModel):
     id: str
     name: str
     resolution: dict = Field(default={"width": 640, "height": 480})
     fps: int = 30
 
 
-class ConnectedRobot(BaseModel):
+class ConnectedRobot(CamelModel):
     id: str
     name: str
     embodiment: RobotEmbodiment
@@ -212,14 +227,14 @@ class ConnectedRobot(BaseModel):
     ros2_status: Optional[Ros2NodeStatus] = None
 
 
-class SessionCreateRequest(BaseModel):
+class SessionCreateRequest(CamelModel):
     task: RobotTask
     mode: SessionMode = SessionMode.manual
     robot_ids: list[str]
     target_episodes: Optional[int] = None
 
 
-class CollectionSession(BaseModel):
+class CollectionSession(CamelModel):
     id: str
     operator_id: str
     task: RobotTask
@@ -231,7 +246,7 @@ class CollectionSession(BaseModel):
     target_episodes: Optional[int] = None
 
 
-class EpisodeMetadata(BaseModel):
+class EpisodeMetadata(CamelModel):
     environment: str = "lab"
     lighting: str = "bright"
     object_variety: int = 0
@@ -244,7 +259,7 @@ class EpisodeMetadata(BaseModel):
     rosbag_id: Optional[str] = None
 
 
-class Episode(BaseModel):
+class Episode(CamelModel):
     id: str
     session_id: str
     robot_id: str

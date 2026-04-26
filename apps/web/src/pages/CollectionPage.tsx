@@ -85,10 +85,14 @@ export function CollectionPage() {
   // Add robot handler — calls API and invalidates query
   const handleAddRobot = async () => {
     if (!newIp.trim()) return;
-    await apiClient.post('/collection/robots/connect', { name: newEmbodiment + ' @ ' + newIp, embodiment: newEmbodiment, connection_type: 'ros2', ip_address: newIp });
-    queryClient.invalidateQueries({ queryKey: ['robots'] });
-    setShowAddForm(false);
-    setNewIp('');
+    try {
+      await apiClient.post('/collection/robots/connect', { name: newEmbodiment + ' @ ' + newIp, embodiment: newEmbodiment, connection_type: newConnectionType, ip_address: newIp });
+      queryClient.invalidateQueries({ queryKey: ['robots'] });
+      setShowAddForm(false);
+      setNewIp('');
+    } catch (err) {
+      push('error', 'Failed to connect robot', 'Check the IP address and try again.');
+    }
   };
 
   const toggleRobot = (id: string) => {

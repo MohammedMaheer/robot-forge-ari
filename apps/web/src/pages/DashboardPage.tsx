@@ -21,6 +21,19 @@ interface ActivityItem {
   time: string;
 }
 
+interface DashboardActivityApiItem {
+  id?: string;
+  type: string;
+  title?: string;
+  message?: string;
+  time: string;
+}
+
+interface EfficiencyItem {
+  date: string;
+  efficiency: number;
+}
+
 function KpiCard({ title, value, sub, trend }: { title: string; value: string; sub?: string; trend?: string }) {
   return (
     <div className="bg-surface-elevated border border-surface-border rounded-lg p-4">
@@ -53,14 +66,19 @@ export function DashboardPage() {
     queryKey: ['dashboard', 'activity'],
     queryFn: async () => {
       const { data } = await apiClient.get('/collection/dashboard/activity');
-      return data.data;
+      return (data.data as DashboardActivityApiItem[]).map((item, index) => ({
+        id: item.id ?? `${item.type}-${item.time}-${index}`,
+        type: item.type,
+        message: item.message ?? item.title ?? 'Activity event',
+        time: item.time,
+      }));
     },
     staleTime: 15_000,
     refetchInterval: 30_000,
   });
 
   // ── Fetch efficiency chart data ───────────────────────
-  const { data: efficiency } = useQuery({
+  const { data: efficiency } = useQuery<EfficiencyItem[]>({
     queryKey: ['dashboard', 'efficiency'],
     queryFn: async () => {
       const { data } = await apiClient.get('/collection/dashboard/efficiency');
@@ -132,13 +150,13 @@ export function DashboardPage() {
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={efficiency ?? []}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94A3B8' }} />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94A3B8' }} />
               <YAxis tick={{ fontSize: 11, fill: '#94A3B8' }} />
               <Tooltip
                 contentStyle={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: 8, fontSize: 12 }}
                 labelStyle={{ color: '#F8FAFC' }}
               />
-              <Area type="monotone" dataKey="episodes" stroke="#2563EB" fill="#2563EB" fillOpacity={0.15} strokeWidth={2} />
+              <Area type="monotone" dataKey="efficiency" stroke="#2563EB" fill="#2563EB" fillOpacity={0.15} strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         </div>

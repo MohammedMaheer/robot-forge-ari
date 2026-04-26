@@ -14,11 +14,15 @@ import { z } from "zod";
 // ---------------------------------------------------------------------------
 
 const PORT = parseInt(process.env.PORT || "3003", 10);
-const JWT_SECRET = process.env.JWT_SECRET || "robotforge-dev-secret";
+const JWT_SECRET = process.env.JWT_SECRET;
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const CORS_ORIGINS = (
   process.env.CORS_ORIGIN || "http://localhost:5173,http://localhost:5174"
 ).split(",");
+
+if (!JWT_SECRET) {
+  throw new Error("JWT_SECRET environment variable is required");
+}
 
 // ---------------------------------------------------------------------------
 // Express app
